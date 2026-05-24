@@ -305,9 +305,23 @@ class ETFAnalyzer:
             if macd > sig and prev['MACD'] <= prev['MACD_Signal']: self.score += 3; self.evaluation_details.append("[+3分] MACD低檔黃金交叉。")
             elif macd < sig and prev['MACD'] >= prev['MACD_Signal']: self.score -= 3; self.evaluation_details.append("[-3分] MACD高檔死亡交叉。")
             
+        # ==========================================
+        # 修改：將 ETF 籌碼分析統一比照股票，呈現買賣超張數與加扣分機制
+        # ==========================================
         if self.institutional_data:
-            f_net, s_net, d_net = self.institutional_data['foreign']/1000, self.institutional_data['sitc']/1000, self.institutional_data['dealer']/1000
-            self.evaluation_details.append(f"[籌碼追蹤] 近期買賣超(千張): 外資 {f_net:+.1f}、投信 {s_net:+.1f}、自營商 {d_net:+.1f}。")
+            f_net = self.institutional_data['foreign'] / 1000
+            s_net = self.institutional_data['sitc'] / 1000
+            d_net = self.institutional_data['dealer'] / 1000
+            total_net = f_net + s_net + d_net
+            
+            if total_net > 500:
+                self.score += 2
+                self.evaluation_details.append(f"[+2分] 法人單日買超 {total_net:,.0f} 張 (外資 {f_net:+.0f}, 投信 {s_net:+.0f}, 自營 {d_net:+.0f})")
+            elif total_net > -100:
+                self.evaluation_details.append(f"[ 0分] 法人單日中性橫盤 ({total_net:,.0f}張) (外資 {f_net:+.0f}, 投信 {s_net:+.0f}, 自營 {d_net:+.0f})")
+            else:
+                self.score -= 2
+                self.evaluation_details.append(f"[-2分] 法人單日賣超 {abs(total_net):,.0f} 張 (外資 {f_net:+.0f}, 投信 {s_net:+.0f}, 自營 {d_net:+.0f})")
 
     def get_time_based_advice(self, term_type):
         s = self.score
