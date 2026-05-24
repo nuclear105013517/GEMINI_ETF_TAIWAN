@@ -14,17 +14,32 @@ warnings.filterwarnings('ignore')
 # ==========================================
 # 介面設計：Apple iOS 模塊化卡片設計 (Light / Dark Mode Adaptive)
 # ==========================================
-st.set_page_config(page_title="台美股/ETF 量化決策系統", layout="centered")
+st.set_page_config(page_title="台美股/ETF 量化決策", layout="wide", initial_sidebar_state="collapsed")
 
 ios_css = """
 <style>
-    /* 1. Apple Typography: 使用 iOS 原生字體 (SF Pro) */
+    /* 1. Apple Typography */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     html, body, [class*="css"] {
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif !important;
-        letter-spacing: -0.01em;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", sans-serif !important;
+        letter-spacing: -0.015em;
     }
 
-    h1, h2, h3 { font-weight: 600 !important; }
+    h1, h2, h3 { font-weight: 700 !important; letter-spacing: -0.02em; }
+    
+    /* 大標題 Apple Stocks 風格 */
+    .ios-large-title {
+        font-size: 34px;
+        font-weight: 800;
+        margin-bottom: 4px;
+        color: var(--text-color);
+    }
+    .ios-sub-title {
+        font-size: 15px;
+        font-weight: 500;
+        color: #8E8E93;
+        margin-bottom: 24px;
+    }
 
     /* 2. iOS 按鈕設計 */
     .stButton>button {
@@ -35,8 +50,7 @@ ios_css = """
         padding: 12px 24px !important;
         font-weight: 600 !important;
         font-size: 16px !important;
-        transition: all 0.2s ease-in-out !important;
-        box-shadow: 0 4px 10px rgba(0, 122, 255, 0.2) !important;
+        transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1) !important;
         width: 100%;
     }
     .stButton>button:hover { opacity: 0.85; transform: scale(0.98); }
@@ -46,37 +60,38 @@ ios_css = """
     .stTextInput>div>div>input { 
         background-color: var(--secondary-background-color) !important; 
         color: var(--text-color) !important; 
-        border: 1px solid var(--border-color) !important;
+        border: none !important;
         border-radius: 12px !important;
-        padding: 12px !important;
+        padding: 14px 16px !important;
         font-size: 16px !important;
-        transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        transition: box-shadow 0.3s ease;
     }
     .stTextInput>div>div>input:focus {
-        border-color: #007AFF !important;
-        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2) !important;
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.3) !important;
     }
 
-    /* 4. iOS 區塊化卡片設計 (Modular Cards) */
+    /* 4. iOS 區塊化卡片設計 */
     .ios-card {
         background-color: var(--secondary-background-color);
-        border: 1px solid var(--border-color);
         border-radius: 20px;
         padding: 24px;
         margin-bottom: 16px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.04);
-        transition: transform 0.2s ease;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        border: 1px solid rgba(150,150,150,0.1);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        height: 100%;
     }
     .ios-card:hover {
         transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.06);
     }
     .ios-card-title {
         font-size: 13px;
         font-weight: 600;
-        color: #8E8E93; /* iOS System Gray */
+        color: #8E8E93;
         margin-bottom: 8px;
         text-transform: uppercase;
-        letter-spacing: 0.8px;
+        letter-spacing: 0.5px;
     }
     .ios-card-value {
         font-size: 32px;
@@ -86,52 +101,99 @@ ios_css = """
         line-height: 1.2;
     }
     .ios-card-value-small {
-        font-size: 24px;
+        font-size: 22px;
         font-weight: 600;
         color: var(--text-color);
         margin-bottom: 8px;
+        line-height: 1.3;
     }
     .ios-card-text {
-        font-size: 15px;
+        font-size: 14px;
         line-height: 1.5;
-        color: var(--text-color);
+        color: #8E8E93;
+        margin-top: 8px;
     }
-    .ios-card-highlight {
-        color: #007AFF;
-        font-weight: 600;
-    }
+
+    /* 5. 終端機風格轉換為 iOS Badge 標籤 */
     .ios-list {
+        list-style-type: none;
+        padding-left: 0;
         margin-top: 12px;
-        padding-left: 20px;
+    }
+    .ios-list-item {
         font-size: 14px;
         line-height: 1.6;
         color: var(--text-color);
+        margin-bottom: 10px;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        background: rgba(150,150,150,0.05);
+        padding: 10px 14px;
+        border-radius: 12px;
     }
-    .ios-list li {
-        margin-bottom: 6px;
+    .ios-badge {
+        font-size: 12px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 8px;
+        white-space: nowrap;
     }
+    .badge-green { background-color: rgba(52, 199, 89, 0.15); color: #34C759; }
+    .badge-red { background-color: rgba(255, 59, 48, 0.15); color: #FF3B30; }
+    .badge-gray { background-color: rgba(142, 142, 147, 0.15); color: #8E8E93; }
+    .badge-orange { background-color: rgba(255, 149, 0, 0.15); color: #FF9500; }
+    .badge-blue { background-color: rgba(0, 122, 255, 0.15); color: #007AFF; }
 </style>
 """
 st.markdown(ios_css, unsafe_allow_html=True)
 
-# 卡片生成輔助函式
+# ==========================================
+# 視覺化元件輔助函式 (解析終端機字串 -> 標籤)
+# ==========================================
+def format_list_item(item):
+    """將類似 '[+2分] KD黃金交叉' 的文字轉為精緻的 HTML Badge"""
+    item = str(item).replace('⚠️', '').strip()
+    match = re.match(r'\[(.*?)\](.*)', item)
+    if match:
+        tag = match.group(1).strip()
+        content = match.group(2).strip()
+        
+        # 決定顏色
+        if '+' in tag or '強烈建議' in content:
+            badge_class = "badge-green"
+        elif '-' in tag or '空頭' in content or '風險' in content:
+            badge_class = "badge-red"
+        elif '0' in tag:
+            badge_class = "badge-gray"
+        elif '警告' in tag or '注意' in content:
+            badge_class = "badge-orange"
+        else:
+            badge_class = "badge-blue"
+            
+        return f"<li class='ios-list-item'><span class='ios-badge {badge_class}'>{tag}</span> <span>{content}</span></li>"
+    else:
+        # 如果是單純文字，沒有中括號標籤
+        return f"<li class='ios-list-item'><span style='color:#8E8E93;'>•</span> <span>{item}</span></li>"
+
 def create_card(title, value, text="", list_items=None, use_small_value=False):
     val_class = "ios-card-value-small" if use_small_value else "ios-card-value"
     list_html = ""
     if list_items:
-        list_html = "<ul class='ios-list'>" + "".join([f"<li>{item}</li>" for item in list_items]) + "</ul>"
+        items_str = "".join([format_list_item(item) for item in list_items])
+        list_html = f"<ul class='ios-list'>{items_str}</ul>"
     
     return f"""
     <div class="ios-card">
         <div class="ios-card-title">{title}</div>
         <div class="{val_class}">{value}</div>
-        {f'<div class="ios-card-text">{text}</div>' if text else ''}
         {list_html}
+        {f'<div class="ios-card-text">{text}</div>' if text else ''}
     </div>
     """
 
 # ==========================================
-# 核心邏輯層 (轉換為回傳結構化資料，而非單純print)
+# 核心邏輯層
 # ==========================================
 def parse_investment_horizon(text):
     text = text.replace(" ", "")
@@ -248,12 +310,12 @@ class ETFAnalyzer:
         latest, prev = self.data.iloc[-1], self.data.iloc[-2]
         
         if latest['Volume_5MA'] < 500000:
-            self.evaluation_details.append(f"⚠️ 近5日均量偏低 ({latest['Volume_5MA']/1000:.0f}張)，需留意流動性風險。")
+            self.evaluation_details.append(f"[警告] 近5日均量偏低 ({latest['Volume_5MA']/1000:.0f}張)，需留意流動性風險。")
 
         bias = latest['BIAS_20']
         if pd.notna(bias):
-            if bias < -5: self.score += 2; self.evaluation_details.append(f"[+2分] 20日乖離率為 {bias:.2f}%，處低檔超跌。")
-            elif bias > 5: self.score -= 2; self.evaluation_details.append(f"[-2分] 20日乖離率為 {bias:.2f}%，偏離過高。")
+            if bias < -5: self.score += 2; self.evaluation_details.append(f"[+2分] 20日乖離率 {bias:.2f}%，處低檔超跌。")
+            elif bias > 5: self.score -= 2; self.evaluation_details.append(f"[-2分] 20日乖離率 {bias:.2f}%，偏離過高。")
             else: self.evaluation_details.append(f"[ 0分] 20日乖離正常 ({bias:.2f}%)。")
             
         rsi, k, d = latest['RSI_14'], latest['K'], latest['D']
@@ -273,7 +335,7 @@ class ETFAnalyzer:
         if self.institutional_data:
             f_net, s_net, d_net = self.institutional_data['foreign']/1000, self.institutional_data['sitc']/1000, self.institutional_data['dealer']/1000
             self.evaluation_details.append(f"[籌碼現況] 近期買賣超(千張): 外資 {f_net:+.1f}、投信 {s_net:+.1f}、自營商 {d_net:+.1f}。")
-            self.evaluation_details.append("💡 提示：ETF之法人籌碼多為造市與套利行為，參考比重應低於個股。")
+            self.evaluation_details.append("[策略提示] ETF之法人籌碼多為造市行為，影響比重應低於個股。")
 
     def get_time_based_advice(self, term_type):
         s = self.score
@@ -290,7 +352,7 @@ class ETFAnalyzer:
             if s >= 2: return "建議單筆+定期定額進場 (位階偏低)"
             elif s > -4: return "建議定期定額進場 (平滑成本)"
             else: return "建議小額定期定額 (短線偏高)"
-        else: return "強烈建議進場 (長線隨時皆是買點，時間是護城河)"
+        else: return "建議長線佈局 (隨時皆是買點，時間是護城河)"
 
     def get_report_data(self):
         latest, recent_low = self.data.iloc[-1], self.data['Low'].tail(20).min()
@@ -299,7 +361,7 @@ class ETFAnalyzer:
         g_high = recent_low * 1.02 if latest['RSI_14'] < 30 else (sma20 if pd.notna(sma20) else current_price)
         matched_tier = "5年以上" if self.user_years > 5.0 else ("3-5年" if self.user_years > 3.0 else ("1-3年" if self.user_years > 1.0 else ("1年" if self.user_years > 0.5 else ("3-6個月" if self.user_years > 0.25 else "1-3個月"))))
 
-        all_horizons = [f"【{term}】 {self.get_time_based_advice(term)}" for term in ["1-3個月", "3-6個月", "1年", "1-3年", "3-5年", "5年以上"]]
+        all_horizons = [f"[{term}] {self.get_time_based_advice(term)}" for term in ["1-3個月", "3-6個月", "1年", "1-3年", "3-5年", "5年以上"]]
         
         return {
             "type": "ETF",
@@ -322,12 +384,12 @@ class StockEvaluator:
         self.matched_horizon, self.user_horizon_text = matched_horizon_str, matched_horizon_str
         self.fm, self.stock, self.df, self.info = fm, yf.Ticker(self.ticker), pd.DataFrame(), {}
         self.horizons = {
-            "1-3個月": {"fund": 0.1, "tech": 0.6, "chip": 0.3, "desc": "極短線極度依賴技術型態與法人動能"},
-            "3-6個月": {"fund": 0.2, "tech": 0.5, "chip": 0.3, "desc": "短中線重視技術指標與大戶籌碼流向"},
-            "1年": {"fund": 0.4, "tech": 0.4, "chip": 0.2, "desc": "中線投資需要基本面獲利支撐，搭配技術多頭"},
-            "1-3年": {"fund": 0.6, "tech": 0.3, "chip": 0.1, "desc": "中長線以長期獲利與估值為主，技術面抓低點"},
-            "3-5年": {"fund": 0.8, "tech": 0.2, "chip": 0.0, "desc": "長線投資高度看重 ROE 與護城河，忽略籌碼波動"},
-            "5年以上": {"fund": 0.9, "tech": 0.1, "chip": 0.0, "desc": "存股極長線幾乎純看財務體質與殖利率"}
+            "1-3個月": {"fund": 0.1, "tech": 0.6, "chip": 0.3, "desc": "極短線依賴技術型態與法人動能"},
+            "3-6個月": {"fund": 0.2, "tech": 0.5, "chip": 0.3, "desc": "短中線重視技術指標與大戶流向"},
+            "1年": {"fund": 0.4, "tech": 0.4, "chip": 0.2, "desc": "中線需基本面支撐，搭配技術多頭"},
+            "1-3年": {"fund": 0.6, "tech": 0.3, "chip": 0.1, "desc": "中長線看重估值，技術面抓低點"},
+            "3-5年": {"fund": 0.8, "tech": 0.2, "chip": 0.0, "desc": "長線高度看重 ROE，忽略短期籌碼"},
+            "5年以上": {"fund": 0.9, "tech": 0.1, "chip": 0.0, "desc": "極長線純看財務體質與配息"}
         }
 
     def fetch_data(self):
@@ -352,33 +414,33 @@ class StockEvaluator:
         pb, roe, yield_pct, eps = self.info.get('priceToBook'), self.info.get('returnOnEquity'), self.info.get('dividendYield'), self.info.get('trailingEps')
         
         if pe is not None:
-            if 0 < pe < 20: score += 10; details.append(f"本益比({pe:.2f}) < 20，估值偏低具吸引力 (+10分)")
-            elif 20 <= pe <= 35: score += 5; details.append(f"本益比({pe:.2f}) 處於正常或成長區間 (+5分)")
-            elif pe <= 0: details.append(f"本益比為負，近期可能虧損 (0分)")
-            else: details.append(f"本益比({pe:.2f}) > 35 偏高，需注意溢價與追高風險 (0分)")
+            if 0 < pe < 20: score += 10; details.append(f"[+10分] 本益比({pe:.2f}) < 20，估值偏低具吸引力")
+            elif 20 <= pe <= 35: score += 5; details.append(f"[+5分] 本益比({pe:.2f}) 處於正常或成長區間")
+            elif pe <= 0: details.append(f"[ 0分] 本益比為負，近期可能虧損")
+            else: details.append(f"[ 0分] 本益比({pe:.2f}) > 35 偏高，需注意溢價風險")
         else:
-            score += 5; details.append("本益比資料未提供，給予中立基本分 (+5分)")
+            score += 5; details.append("[+5分] 本益比資料未提供，給予中立分")
 
         if pb is not None:
-            if 0 < pb < 3.5: score += 5; details.append(f"股價淨值比({pb:.2f}) 相對安全 (+5分)")
-            else: details.append(f"股價淨值比({pb:.2f}) 偏高，或為成長股特性 (0分)")
+            if 0 < pb < 3.5: score += 5; details.append(f"[+5分] 股價淨值比({pb:.2f}) 相對安全")
+            else: details.append(f"[ 0分] 股價淨值比({pb:.2f}) 偏高，或具成長特性")
         else:
-            score += 2.5; details.append("股價淨值比資料未提供，給予中立分 (+2.5分)")
+            score += 2.5; details.append("[+2.5分] 淨值比資料未提供")
 
         if roe is not None:
             roe_val = roe * 100
-            if roe_val > 12: score += 10; details.append(f"近四季 ROE({roe_val:.2f}%) > 12%，資本回報效率佳 (+10分)")
-            elif roe_val > 5: score += 5; details.append(f"近四季 ROE({roe_val:.2f}%) 表現尚可 (+5分)")
-            else: details.append(f"近四季 ROE({roe_val:.2f}%) 偏低 (0分)")
+            if roe_val > 12: score += 10; details.append(f"[+10分] 近四季 ROE({roe_val:.2f}%) > 12%，效率佳")
+            elif roe_val > 5: score += 5; details.append(f"[+5分] 近四季 ROE({roe_val:.2f}%) 表現尚可")
+            else: details.append(f"[ 0分] 近四季 ROE({roe_val:.2f}%) 偏低")
         else:
-            score += 5; details.append("ROE資料未提供，給予中立分 (+5分)")
+            score += 5; details.append("[+5分] ROE資料未提供")
 
         if yield_pct is not None:
             yield_val = yield_pct * 100
-            if yield_val > 4: score += 5; details.append(f"預估殖利率({yield_val:.2f}%) > 4%，具下檔保護 (+5分)")
-            else: details.append(f"預估殖利率({yield_val:.2f}%) 較低，屬成長型特徵 (0分)")
+            if yield_val > 4: score += 5; details.append(f"[+5分] 預估殖利率({yield_val:.2f}%) > 4%，具保護")
+            else: details.append(f"[ 0分] 殖利率({yield_val:.2f}%) 偏低")
         else:
-            score += 2.5; details.append("殖利率資料未提供，給予中立分 (+2.5分)")
+            score += 2.5; details.append("[+2.5分] 殖利率資料未提供")
 
         return score, details, eps
 
@@ -387,28 +449,28 @@ class StockEvaluator:
         latest, prev = self.df.iloc[-1], self.df.iloc[-2]
         
         if latest['Volume_5MA'] < 500000:
-            details.append(f"⚠️ [警告] 近5日均量低於 500 張 ({latest['Volume_5MA']/1000:.0f}張)，流動性差！")
+            details.append(f"[警告] 近5日均量極低 ({latest['Volume_5MA']/1000:.0f}張)，留意流動性風險")
 
         if latest['Close'] > latest['MA20'] > latest['MA60']:
-            score += 15; details.append("股價 > 月線 > 季線，技術面呈多頭排列 (+15分)")
+            score += 15; details.append("[+15分] 股價 > 月線 > 季線，多頭排列")
         elif latest['Close'] < latest['MA20'] and latest['MA20'] < latest['MA60']:
-            details.append("技術面呈空頭走勢，不建議盲目接刀 (0分)")
-        else: score += 5; details.append("均線交織，處於區間盤整階段 (+5分)")
+            details.append("[ 0分] 技術面空頭走勢，不建議盲目接刀")
+        else: score += 5; details.append("[+5分] 均線交織，區間盤整階段")
         
         if latest['K'] < 30:
-            score += 10; details.append(f"KD指標低檔超賣 (K:{latest['K']:.1f})，具反彈契機 (+10分)")
-            if latest['K'] > latest['D'] and prev['K'] <= prev['D']: score += 5; details.append("【訊號】KD 低檔黃金交叉 (+5分)")
-        elif latest['K'] > 80: details.append(f"KD指標高檔超買 (K:{latest['K']:.1f})，注意過熱 (0分)")
-        else: score += 5; details.append(f"KD 指標位於中性區間 (K:{latest['K']:.1f}) (+5分)")
+            score += 10; details.append(f"[+10分] KD低檔超賣 (K:{latest['K']:.1f})，具反彈契機")
+            if latest['K'] > latest['D'] and prev['K'] <= prev['D']: score += 5; details.append("[訊號] KD 低檔黃金交叉")
+        elif latest['K'] > 80: details.append(f"[ 0分] KD高檔超買 (K:{latest['K']:.1f})，注意過熱")
+        else: score += 5; details.append(f"[+5分] KD指標位於中性區間 (K:{latest['K']:.1f})")
         
         recent_low, recent_high = self.df['Low'].tail(20).min(), self.df['High'].tail(20).max()
-        if latest['Close'] <= recent_low * 1.05: score += 10; details.append(f"股價接近近20日支撐點({recent_low:.2f})，風報比佳 (+10分)")
+        if latest['Close'] <= recent_low * 1.05: score += 10; details.append(f"[+10分] 接近近20日支撐點({recent_low:.2f})")
         return score, details, recent_low, recent_high
 
     def analyze_chips(self):
         score, details = 0, []
         if self.market_label == "美股/全球":
-            score += 10; details.append("海外市場不適用台灣籌碼分析，給予基本分 (+10分)")
+            score += 10; details.append("[+10分] 海外市場不適用台灣籌碼分析")
             return score, details
 
         start_date = (datetime.date.today() - datetime.timedelta(days=40)).strftime("%Y-%m-%d")
@@ -417,29 +479,29 @@ class StockEvaluator:
             if df_inst is not None and not df_inst.empty:
                 df_inst['net_buy'] = df_inst['buy'] - df_inst['sell']
                 recent_3_days_net = df_inst.groupby('date')['net_buy'].sum().tail(3).sum() / 1000
-                if recent_3_days_net > 500: score += 10; details.append(f"三大法人近3日買超 {recent_3_days_net:,.0f} 張，籌碼點火 (+10分)")
-                elif recent_3_days_net > -100: score += 5; details.append(f"三大法人近3日中性橫盤，淨變動 {recent_3_days_net:,.0f} 張 (+5分)")
-                else: details.append(f"三大法人近3日賣超 {abs(recent_3_days_net):,.0f} 張，上方壓力重 (0分)")
-            else: score += 5; details.append("近期無三大法人進出數據，給予中立分 (+5分)")
+                if recent_3_days_net > 500: score += 10; details.append(f"[+10分] 法人近3日買超 {recent_3_days_net:,.0f} 張，籌碼點火")
+                elif recent_3_days_net > -100: score += 5; details.append(f"[+5分] 法人近3日中性橫盤 ({recent_3_days_net:,.0f}張)")
+                else: details.append(f"[ 0分] 法人近3日賣超 {abs(recent_3_days_net):,.0f} 張，上方有壓")
+            else: score += 5; details.append("[+5分] 近期無法人進出數據")
 
             df_shares = self.fm.taiwan_stock_holding_shares_per(stock_id=self.raw_ticker, start_date=start_date)
             if df_shares is not None and not df_shares.empty:
                 df_big_holders = df_shares[df_shares['HoldingSharesLevel'] == 'more than 1,000,001'].sort_values(by='date')
                 if len(df_big_holders) >= 2:
                     diff = df_big_holders['percent'].iloc[-1] - df_big_holders['percent'].iloc[-2]
-                    if diff > 0.1: score += 10; details.append(f"千張大戶持股比單週增加 {diff:+.2f}%，大戶進場 (+10分)")
-                    elif diff < -0.1: details.append(f"千張大戶持股比單週減少 {abs(diff):-.2f}%，大戶出貨 (0分)")
-                    else: score += 5; details.append(f"千張大戶持股比率維持穩定 (+5分)")
-                else: score += 5; details.append("集保大戶數據不足，給予中立分 (+5分)")
-            else: score += 5; details.append("未獲取到股權分散數據，給予中立分 (+5分)")
+                    if diff > 0.1: score += 10; details.append(f"[+10分] 千張大戶單週增加 {diff:+.2f}%")
+                    elif diff < -0.1: details.append(f"[ 0分] 千張大戶單週減少 {abs(diff):-.2f}%")
+                    else: score += 5; details.append(f"[+5分] 千張大戶持股比率穩定")
+                else: score += 5; details.append("[+5分] 集保大戶數據不足")
+            else: score += 5; details.append("[+5分] 未獲取股權分散數據")
         except Exception: 
-            score += 10; details.append("因 API 限制無籌碼資料，改給中立計分 (+10分)")
+            score += 10; details.append("[+10分] API 限制無籌碼資料，給予中立計分")
         return score, details
 
     def _get_advice_level(self, total_score):
         if total_score >= 75: return "強烈建議進場"
         elif total_score >= 60: return "建議進場"
-        elif total_score >= 45: return "平平 (觀望為主)"
+        elif total_score >= 45: return "中性觀望為主"
         elif total_score >= 30: return "不建議進場"
         else: return "強烈不建議進場"
 
@@ -460,7 +522,7 @@ class StockEvaluator:
         all_horizons = []
         for horizon, w in self.horizons.items():
             h_total = (f_pct * w['fund']) + (t_pct * w['tech']) + (c_pct * w['chip'])
-            all_horizons.append(f"【{horizon}】 {self._get_advice_level(h_total)} (評分: {h_total:.1f})")
+            all_horizons.append(f"[{horizon}] {self._get_advice_level(h_total)} (評分: {h_total:.1f})")
 
         return {
             "type": "Stock",
@@ -513,26 +575,41 @@ class MasterRoutingSystem:
         return ticker_yf, is_etf, stock_name, market_label
 
 # ==========================================
-# 網頁 UI 綁定層 (版面間距保持簡潔，渲染模塊化卡片)
+# 網頁 UI 綁定層 (iOS 風格渲染)
 # ==========================================
-st.title("台美股/ETF 雙引擎量化進場決策系統")
-st.write("這是一套結合基本面、技術面與籌碼面的法人級量化模型。")
 
-col1, col2 = st.columns(2)
-with col1:
-    raw_ticker = st.text_input("1. 請輸入股票或 ETF 代號 (如: 0050, TSLA)", value="2412").strip().upper().replace('.TW', '').replace('.TWO', '')
-with col2:
-    horizon_input = st.text_input("2. 請預計投資的時間年限 (如: 10年, 當沖)", value="1年").strip()
+# 頂部 Header
+st.markdown('<div class="ios-large-title">Quantitative Analyst</div>', unsafe_allow_html=True)
+st.markdown('<div class="ios-sub-title">台美股與 ETF 法人級量化決策系統</div>', unsafe_allow_html=True)
 
-if st.button("開始分析"):
+# 輸入區塊設定為乾淨的兩欄
+with st.container():
+    col1, col2 = st.columns(2)
+    with col1:
+        raw_ticker = st.text_input("股票或 ETF 代號", placeholder="例如: 0050, TSLA", value="2412").strip().upper().replace('.TW', '').replace('.TWO', '')
+    with col2:
+        horizon_input = st.text_input("預計投資年限", placeholder="例如: 1年, 當沖, 10年", value="1年").strip()
+
+# 使用空白隔開按鈕
+st.markdown("<br>", unsafe_allow_html=True)
+btn_col1, btn_col2, btn_col3 = st.columns([1, 2, 1])
+with btn_col2:
+    start_analysis = st.button("開始分析")
+
+if start_analysis:
     if raw_ticker:
-        with st.spinner("正在連接市場資料庫並進行大量運算，請稍候..."):
+        with st.spinner("連接市場資料庫運算中..."):
             try:
                 system = MasterRoutingSystem()
                 matched_horizon = parse_investment_horizon(horizon_input)
                 horizon_years = get_horizon_years(matched_horizon)
                 ticker_yf, is_etf, stock_name, market_label = system.auto_detect_type(raw_ticker)
                 
+                # 美化分隔線
+                st.markdown("<hr style='border:1px solid rgba(150,150,150,0.1); margin: 32px 0;'>", unsafe_allow_html=True)
+                st.markdown(f'<div class="ios-large-title">{stock_name}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="ios-sub-title">{ticker_yf} ‧ {market_label}</div>', unsafe_allow_html=True)
+
                 # --- ETF UI 渲染 ---
                 if is_etf:
                     analyzer = ETFAnalyzer(raw_ticker, ticker_yf, stock_name, horizon_years)
@@ -542,86 +619,82 @@ if st.button("開始分析"):
                     analyzer.analyze_score()
                     data = analyzer.get_report_data()
                     
-                    st.markdown(f"### {data['name']} ({data['ticker']}) - ETF 量化波段決策")
-                    
-                    # Row 1: 核心數據指標 (三欄)
+                    # Row 1: 核心數據指標
                     c1, c2, c3 = st.columns(3)
-                    with c1: st.markdown(create_card("目前收盤價", f"${data['price']:.2f}"), unsafe_allow_html=True)
-                    with c2: st.markdown(create_card("黃金承接區段", f"${data['g_low']:.2f} - ${data['g_high']:.2f}", text="實務交易 ETF 務必確認折溢價狀態"), unsafe_allow_html=True)
-                    with c3: st.markdown(create_card("綜合評估總分", f"{data['score']} 分", use_small_value=False), unsafe_allow_html=True)
+                    with c1: st.markdown(create_card("最新收盤價", f"${data['price']:.2f}"), unsafe_allow_html=True)
+                    with c2: st.markdown(create_card("承接區間", f"${data['g_low']:.2f} - ${data['g_high']:.2f}", text="需配合折溢價判斷"), unsafe_allow_html=True)
+                    with c3: st.markdown(create_card("綜合評分", f"{data['score']}", text="量化多空指標"), unsafe_allow_html=True)
                     
-                    # Row 2: 專屬客製化建議 (大卡片)
+                    # Row 2: 大卡片專屬建議
                     st.markdown(create_card(
-                        f"為您量身打造的專屬建議 (投資年限：{horizon_input})", 
+                        f"智能投資建議 ‧ {horizon_input}", 
                         data['advice'], 
                         text="此建議由演算法根據您選擇的時間長度，動態配置參數權重後生成。"
                     ), unsafe_allow_html=True)
 
-                    # Row 3: 各維度詳情 (雙欄)
+                    # Row 3: 雙欄維度細節
                     c4, c5 = st.columns(2)
                     with c4:
-                        st.markdown(create_card("技術面與籌碼面評估細節", "AI 解析日誌", list_items=data['details'], use_small_value=True), unsafe_allow_html=True)
+                        st.markdown(create_card("技術面與籌碼解析", "分析日誌", list_items=data['details'], use_small_value=True), unsafe_allow_html=True)
                     with c5:
-                        st.markdown(create_card("其他投資年限策略參考", "跨週期分析", list_items=data['all_horizons'], use_small_value=True), unsafe_allow_html=True)
+                        st.markdown(create_card("跨週期策略", "其他投資年限", list_items=data['all_horizons'], use_small_value=True), unsafe_allow_html=True)
 
                 # --- 股票 UI 渲染 ---
                 else:
                     evaluator = StockEvaluator(raw_ticker, ticker_yf, stock_name, market_label, matched_horizon, system.fm)
                     data = evaluator.get_report_data()
                     
-                    st.markdown(f"### {data['name']} ({data['ticker']}) - 個股多空量化報告")
-                    
-                    # Row 1: 核心數據指標 (三欄)
+                    # Row 1: 核心數據指標
                     c1, c2, c3 = st.columns(3)
-                    with c1: st.markdown(create_card("目前收盤價", f"${data['price']:,.2f}"), unsafe_allow_html=True)
-                    with c2: st.markdown(create_card("技術支撐區間", f"${data['support']:,.2f} - ${data['support']*1.05:,.2f}"), unsafe_allow_html=True)
-                    eps_text = f"${data['eps']:.2f}" if data['eps'] is not None else "暫無資料"
+                    with c1: st.markdown(create_card("最新收盤價", f"${data['price']:,.2f}"), unsafe_allow_html=True)
+                    with c2: st.markdown(create_card("短線支撐區間", f"${data['support']:,.2f} - ${data['support']*1.05:,.2f}"), unsafe_allow_html=True)
+                    eps_text = f"${data['eps']:.2f}" if data['eps'] is not None else "N/A"
                     with c3: st.markdown(create_card("近四季 EPS", eps_text), unsafe_allow_html=True)
                     
-                    # Row 2: 專屬客製化策略 (大卡片)
-                    strategy_str = f"權重配置：基本面 {data['weights']['fund']:.0f}% / 技術面 {data['weights']['tech']:.0f}% / 籌碼面 {data['weights']['chip']:.0f}% <br><br> {data['strategy']}"
+                    # Row 2: 專屬客製化策略
+                    strategy_str = f"模型權重配置：基本面 {data['weights']['fund']:.0f}% ‧ 技術面 {data['weights']['tech']:.0f}% ‧ 籌碼面 {data['weights']['chip']:.0f}%<br><br>{data['strategy']}"
                     st.markdown(create_card(
-                        f"專屬客製化建議 (投資年限：{data['user_horizon']})", 
-                        f"{data['advice']} <span style='font-size: 20px; color: #888;'>({data['user_total']:.1f}/100)</span>",
+                        f"客製化投資決策 ‧ {data['user_horizon']}", 
+                        f"{data['advice']} <span style='font-size:20px; color:#8E8E93;'>({data['user_total']:.1f}/100)</span>",
                         text=strategy_str
                     ), unsafe_allow_html=True)
                     
-                    # Row 3: 維度深入解析 (雙欄)
+                    # Row 3: 維度深入解析
                     c4, c5 = st.columns(2)
                     with c4:
                         st.markdown(create_card(
-                            f"第一維度：基本面價值", 
+                            "基本面價值", 
                             f"{data['scores']['fund']:.1f} / {data['weights']['fund']:.0f}", 
                             list_items=data['details_fund'], use_small_value=True
                         ), unsafe_allow_html=True)
                     with c5:
                         tech_list = data['details_tech'].copy()
-                        tech_list.append(f"參考波段壓力位: ${data['resistance']:,.2f}")
+                        tech_list.append(f"[注意] 參考波段壓力位: ${data['resistance']:,.2f}")
                         st.markdown(create_card(
-                            f"第二維度：技術面擇時", 
+                            "技術面擇時", 
                             f"{data['scores']['tech']:.1f} / {data['weights']['tech']:.0f}", 
                             list_items=tech_list, use_small_value=True
                         ), unsafe_allow_html=True)
 
-                    # Row 4: 籌碼與跨週期 (雙欄)
+                    # Row 4: 籌碼與跨週期
                     c6, c7 = st.columns(2)
                     with c6:
-                        chip_text = "說明：長線存股演算法已將短期籌碼波動降噪 (權重歸零)" if data['weights']['chip'] == 0 else ""
+                        chip_text = "極長線存股演算法已將短期籌碼波動降噪 (權重歸零)" if data['weights']['chip'] == 0 else ""
                         st.markdown(create_card(
-                            f"第三維度：大戶籌碼流向", 
+                            "大戶籌碼流向", 
                             f"{data['scores']['chip']:.1f} / {data['weights']['chip']:.0f}",
                             text=chip_text,
                             list_items=data['details_chip'], use_small_value=True
                         ), unsafe_allow_html=True)
                     with c7:
                         st.markdown(create_card(
-                            "其他投資年限策略參考", 
-                            "跨週期分析", 
+                            "跨週期策略", 
+                            "其他投資年限", 
                             list_items=data['all_horizons'], use_small_value=True
                         ), unsafe_allow_html=True)
 
             except Exception as e:
-                st.error(f"系統執行發生錯誤，請檢查您的網路連線，或確認輸入的證券代號是否有效。 (錯誤代碼: {e})")
+                st.error(f"⚠️ 系統執行發生錯誤，請檢查您的網路連線或證券代號是否正確。(Error: {e})")
                 
     else:
         st.warning("請先輸入股票代號！")
