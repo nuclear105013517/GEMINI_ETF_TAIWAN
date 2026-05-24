@@ -116,22 +116,32 @@ st.markdown(ios_css, unsafe_allow_html=True)
 # ==========================================
 # UI 渲染核心：徹底消除換行縮排，防止 Markdown 誤判 HTML
 # ==========================================
-def format_list_item(item):
+def format_list_item(item, force_blue=False):
     item = str(item).replace('⚠️', '').strip()
     match = re.match(r'\[(.*?)\](.*)', item)
     if match:
         tag = match.group(1).strip()
         content = match.group(2).strip()
-        if '+' in tag or '強烈' in content or '多頭' in content: badge_class = "badge-green"
-        elif '-' in tag or '空頭' in content or '風險' in content or '跌' in content: badge_class = "badge-red"
-        elif '0' in tag: badge_class = "badge-gray"
-        elif '警告' in tag or '注意' in content or '壓力' in content: badge_class = "badge-orange"
-        else: badge_class = "badge-blue"
+        
+        # 增加 force_blue 參數，如果是其他投資年限區塊，強制統一顯示藍色
+        if force_blue:
+            badge_class = "badge-blue"
+        elif '+' in tag or '強烈' in content or '多頭' in content: 
+            badge_class = "badge-green"
+        elif '-' in tag or '空頭' in content or '風險' in content or '跌' in content: 
+            badge_class = "badge-red"
+        elif '0' in tag: 
+            badge_class = "badge-gray"
+        elif '警告' in tag or '注意' in content or '壓力' in content: 
+            badge_class = "badge-orange"
+        else: 
+            badge_class = "badge-blue"
+            
         return f"<li class='ios-list-item'><div class='ios-badge {badge_class}'>{tag}</div><div class='ios-list-text'>{content}</div></li>"
     else:
         return f"<li class='ios-list-item'><div class='ios-list-text'>{item}</div></li>"
 
-def create_card(title, value, custom_html="", list_items=None, use_small_value=False, icon="📊", footer=""):
+def create_card(title, value, custom_html="", list_items=None, use_small_value=False, icon="📊", footer="", force_blue_badge=False):
     val_class = "ios-card-value-small" if use_small_value else "ios-card-value"
     
     html_parts = []
@@ -140,7 +150,8 @@ def create_card(title, value, custom_html="", list_items=None, use_small_value=F
     html_parts.append(f'<div class="{val_class}">{value}</div>')
     
     if list_items:
-        items_str = "".join([format_list_item(item) for item in list_items])
+        # 傳遞 force_blue_badge 以強制變更特定卡片內的標籤顏色
+        items_str = "".join([format_list_item(item, force_blue_badge) for item in list_items])
         html_parts.append(f"<ul class='ios-list'>{items_str}</ul>")
         
     if custom_html:
@@ -526,8 +537,10 @@ with st.container():
     with col2: horizon_input = st.text_input("預計投資年限, 例如: 1年, 當沖, 退休, 10年", value="1年").strip()
 
 st.markdown("<br>", unsafe_allow_html=True)
-btn_col1, btn_col2, btn_col3 = st.columns([1, 2, 1])
-with btn_col2: start_analysis = st.button("開始分析")
+
+# 調整：修改排列欄位並放置於第一列，使按鈕切齊畫面左側
+btn_col1, btn_col2 = st.columns([1, 4])
+with btn_col1: start_analysis = st.button("開始分析")
 
 if start_analysis and raw_ticker:
     with st.spinner("連接市場資料庫運算中..."):
@@ -558,7 +571,9 @@ if start_analysis and raw_ticker:
 
                 c4, c5 = st.columns(2)
                 with c4: st.markdown(create_card("技術面與籌碼解析", "分析日誌", list_items=data['details'], use_small_value=True, icon="📝"), unsafe_allow_html=True)
-                with c5: st.markdown(create_card("跨週期策略", "其他投資年限", list_items=data['all_horizons'], use_small_value=True, icon="⏱️"), unsafe_allow_html=True)
+                
+                # 調整：加入 force_blue_badge=True 讓其他投資年限標籤強制顯示藍色
+                with c5: st.markdown(create_card("跨週期策略", "其他投資年限", list_items=data['all_horizons'], use_small_value=True, icon="⏱️", force_blue_badge=True), unsafe_allow_html=True)
 
             else:
                 evaluator = StockEvaluator(raw_ticker, ticker_yf, stock_name, market_label, matched_horizon, system.fm)
@@ -592,7 +607,9 @@ if start_analysis and raw_ticker:
                 c6, c7 = st.columns(2)
                 chip_footer = "極長線演算法已將短期籌碼波動降噪 (權重歸零)" if data['weights']['chip'] == 0 else ""
                 with c6: st.markdown(create_card("大戶籌碼流向", f"{data['scores']['chip']:.1f} / {data['weights']['chip']:.0f}", list_items=data['details_chip'], footer=chip_footer, use_small_value=True, icon="🏦"), unsafe_allow_html=True)
-                with c7: st.markdown(create_card("跨週期策略", "其他投資年限", list_items=data['all_horizons'], use_small_value=True, icon="⏱️"), unsafe_allow_html=True)
+                
+                # 調整：加入 force_blue_badge=True 讓其他投資年限標籤強制顯示藍色
+                with c7: st.markdown(create_card("跨週期策略", "其他投資年限", list_items=data['all_horizons'], use_small_value=True, icon="⏱️", force_blue_badge=True), unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"⚠️ 系統執行發生錯誤，請檢查您的網路連線或證券代號是否正確。(Error: {e})")
