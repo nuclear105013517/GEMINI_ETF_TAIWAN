@@ -517,13 +517,13 @@ class MasterRoutingSystem:
 # ==========================================
 # 網頁 UI 綁定層
 # ==========================================
-st.markdown('<div class="ios-large-title">Quantitative Analyst</div>', unsafe_allow_html=True)
-st.markdown('<div class="ios-sub-title">台美股與 ETF 法人級量化決策系統</div>', unsafe_allow_html=True)
+st.markdown('<div class="ios-large-title">台美股與 ETF 量化決策系統</div>', unsafe_allow_html=True)
+st.markdown('<div class="ios-sub-title">Quantitative Decision System for Taiwan and US Stocks and ETFs</div>', unsafe_allow_html=True)
 
 with st.container():
     col1, col2 = st.columns(2)
-    with col1: raw_ticker = st.text_input("股票或 ETF 代號", placeholder="例如: 0050, TSLA", value="2412").strip().upper().replace('.TW', '').replace('.TWO', '')
-    with col2: horizon_input = st.text_input("預計投資年限", placeholder="例如: 1年, 當沖, 10年", value="1年").strip()
+    with col1: raw_ticker = st.text_input("股票或 ETF 代號,例如: 0050, 2330, TSLA", value="2412").strip().upper().replace('.TW', '').replace('.TWO', '')
+    with col2: horizon_input = st.text_input("預計投資年限, 例如: 1年, 當沖, 10年", value="1年").strip()
 
 st.markdown("<br>", unsafe_allow_html=True)
 btn_col1, btn_col2, btn_col3 = st.columns([1, 2, 1])
