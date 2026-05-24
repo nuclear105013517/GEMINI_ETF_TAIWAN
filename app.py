@@ -14,30 +14,148 @@ from contextlib import redirect_stdout
 warnings.filterwarnings('ignore')
 
 # ==========================================
-# 介面設計：莫蘭迪色系 CSS (Morandi Palette)
+# 介面設計：Google Material / Search 風格 UI
 # ==========================================
-st.set_page_config(page_title="台美股/ETF 量化決策系統", page_icon="🏦", layout="centered")
+st.set_page_config(page_title="台美股量化決策 - Quant Search", page_icon="🔍", layout="centered")
 
-morandi_css = """
+google_css = """
 <style>
-    .stApp { background-color: #F2F1EC; color: #4A4A4A; }
-    h1, h2, h3 { color: #6B7B75 !important; }
-    .stButton>button {
-        background-color: #79898C; color: white; border: none;
-        border-radius: 8px; padding: 10px 24px; transition: all 0.3s ease;
+    /* 匯入 Google 官方字體 Roboto */
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+    
+    /* 全局字體設定 */
+    html, body, [class*="css"] {
+        font-family: 'Roboto', sans-serif !important;
     }
-    .stButton>button:hover { background-color: #5D6C6F; border-color: #5D6C6F; }
-    .stTextInput>div>div>input { background-color: #E8E8E3; color: #333333; border: 1px solid #C4C4C4; }
+
+    /* 隱藏原生頂部空白，營造更集中的搜尋首頁感 */
+    .block-container {
+        padding-top: 3rem !important;
+    }
+
+    /* 主標題與副標題樣式 */
+    .google-title {
+        text-align: center;
+        font-size: 3rem;
+        font-weight: 500;
+        margin-bottom: 0.2rem;
+        letter-spacing: -0.5px;
+    }
+    .google-subtitle {
+        text-align: center;
+        font-size: 1.1rem;
+        font-weight: 400;
+        color: #5f6368;
+        margin-bottom: 2.5rem;
+    }
+
+    /* 輸入框 Label 樣式 */
+    .stTextInput > label > div > p {
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        color: #5f6368 !important;
+        margin-bottom: 6px;
+    }
+
+    /* 1. 輸入框 (Google 首頁搜尋框風格) */
+    .stTextInput>div>div>input {
+        border-radius: 24px !important;
+        padding: 14px 24px !important;
+        border: 1px solid #dfe1e5 !important;
+        background-color: #ffffff;
+        color: #202124;
+        font-size: 16px !important;
+        transition: background-color 0.3s, box-shadow 0.3s, border-color 0.3s;
+        box-shadow: none !important;
+    }
+    .stTextInput>div>div>input:hover, .stTextInput>div>div>input:focus {
+        box-shadow: 0 1px 6px rgba(32, 33, 36, 0.28) !important;
+        border-color: rgba(223, 225, 229, 0) !important;
+        outline: none !important;
+    }
+
+    /* 2. 按鈕設計 (Google Blue) 與置中 */
+    .stButton {
+        display: flex;
+        justify-content: center;
+        margin-top: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    .stButton>button {
+        background-color: #1a73e8 !important;
+        color: #ffffff !important;
+        border-radius: 4px !important;
+        border: none !important;
+        padding: 10px 32px !important;
+        font-size: 15px !important;
+        font-weight: 500 !important;
+        transition: background-color 0.2s, box-shadow 0.2s;
+    }
+    .stButton>button:hover {
+        background-color: #1b66c9 !important;
+        box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15) !important;
+    }
+
+    /* 3. 分析報告區塊 (Terminal 輸出風格) */
     pre {
-        background-color: #E2DFD8 !important; color: #3A403E !important;
-        border-radius: 8px; padding: 15px; border-left: 5px solid #8B9D95;
+        background-color: #f8f9fa !important;
+        color: #202124 !important;
+        border: 1px solid #dadce0 !important;
+        border-radius: 12px !important;
+        padding: 24px !important;
+        font-family: 'Consolas', 'Courier New', monospace !important;
+        line-height: 1.6 !important;
+        font-size: 14.5px !important;
+    }
+
+    /* =========================================
+       4. 深色模式 (Dark Mode) 適配
+       ========================================= */
+    @media (prefers-color-scheme: dark) {
+        .stApp {
+            background-color: #202124 !important;
+        }
+        
+        .google-subtitle, .stTextInput > label > div > p {
+            color: #9aa0a6 !important;
+        }
+
+        /* 深色模式搜尋框 */
+        .stTextInput>div>div>input {
+            background-color: #303134 !important;
+            border: 1px solid #5f6368 !important;
+            color: #e8eaed !important;
+        }
+        .stTextInput>div>div>input:hover, .stTextInput>div>div>input:focus {
+            background-color: #303134 !important;
+            box-shadow: 0 1px 6px rgba(23, 23, 23, 0.98) !important;
+            border-color: rgba(95, 99, 104, 0) !important;
+        }
+
+        /* 深色模式按鈕 (適配對比度的 Google 亮藍色) */
+        .stButton>button {
+            background-color: #8ab4f8 !important; 
+            color: #202124 !important;
+        }
+        .stButton>button:hover {
+            background-color: #aecbfa !important;
+            box-shadow: 0 1px 2px 0 rgba(0,0,0,0.3), 0 1px 3px 1px rgba(0,0,0,0.15) !important;
+        }
+
+        /* 深色模式輸出區塊 */
+        pre {
+            background-color: #303134 !important;
+            color: #e8eaed !important;
+            border: 1px solid #3c4043 !important;
+        }
     }
 </style>
 """
-st.markdown(morandi_css, unsafe_allow_html=True)
+st.markdown(google_css, unsafe_allow_html=True)
+
 
 # ==========================================
-# 核心邏輯
+# 核心邏輯 (使用修正優化後的量化模型)
 # ==========================================
 def parse_investment_horizon(text):
     text = text.replace(" ", "")
@@ -149,16 +267,13 @@ class ETFAnalyzer:
         df['D'] = df['K'].ewm(com=2, adjust=False).mean()
         df['MACD'] = df['Close'].ewm(span=12, adjust=False).mean() - df['Close'].ewm(span=26, adjust=False).mean()
         df['MACD_Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-        
-        # [新增] 流動性指標 (5日均量)
         df['Volume_5MA'] = df['Volume'].rolling(window=5).mean()
 
     def analyze_score(self):
         if len(self.data) < 2: return
         latest, prev = self.data.iloc[-1], self.data.iloc[-2]
         
-        # [新增] 流動性檢測警告
-        if latest['Volume_5MA'] < 500000: # 小於500張
+        if latest['Volume_5MA'] < 500000: 
             self.evaluation_details.append(f"⚠️ [警告] 近5日均量偏低 ({latest['Volume_5MA']/1000:.0f}張)，技術指標易失真，需留意流動性風險。")
 
         bias = latest['BIAS_20']
@@ -264,7 +379,6 @@ class StockEvaluator:
         pe = self.info.get('trailingPE', self.info.get('forwardPE'))
         pb, roe, yield_pct, eps = self.info.get('priceToBook'), self.info.get('returnOnEquity'), self.info.get('dividendYield'), self.info.get('trailingEps')
         
-        # [修復] 防禦 yfinance 缺漏台股資料造成的誤殺，若無資料給予中立分
         if pe is not None:
             if 0 < pe < 20: score += 10; details.append(f"本益比({pe:.2f}) < 20，估值偏低具吸引力 (+10分)")
             elif 20 <= pe <= 35: score += 5; details.append(f"本益比({pe:.2f}) 處於成長區間或產業平均水準 (+5分)")
@@ -329,7 +443,6 @@ class StockEvaluator:
         start_date = (datetime.date.today() - datetime.timedelta(days=40)).strftime("%Y-%m-%d")
         
         try:
-            # [修復] FinMind 若無 Token 容易被擋，加入更穩定的例外處理與給分機制
             df_inst = self.fm.taiwan_stock_institutional_investors(stock_id=self.raw_ticker, start_date=start_date)
             if df_inst is not None and not df_inst.empty:
                 df_inst['net_buy'] = df_inst['buy'] - df_inst['sell']
@@ -436,49 +549,61 @@ class MasterRoutingSystem:
         return ticker_yf, is_etf, stock_name, market_label
 
 # ==========================================
-# 網頁 UI 綁定層 (維持不變)
+# 網頁版面渲染層 (HTML & Layout)
 # ==========================================
-st.title("🏦 台美股/ETF 雙引擎量化進場決策系統")
-st.write("這是一套結合基本面、技術面與籌碼面的法人級量化模型。")
+# 1. 帶有 Google 色彩的客製化標題
+st.markdown("""
+    <div style="text-align: center;">
+        <h1 class="google-title">
+            <span style="color: #4285F4;">Q</span><span style="color: #EA4335;">u</span><span style="color: #FBBC05;">a</span><span style="color: #4285F4;">n</span><span style="color: #34A853;">t</span>
+            <span style="color: #EA4335;">S</span><span style="color: #FBBC05;">e</span><span style="color: #4285F4;">a</span><span style="color: #34A853;">r</span><span style="color: #EA4335;">c</span><span style="color: #FBBC05;">h</span>
+        </h1>
+        <p class="google-subtitle">台美股/ETF 雙引擎量化進場決策系統</p>
+    </div>
+""", unsafe_allow_html=True)
 
-col1, col2 = st.columns(2)
-with col1:
-    raw_ticker = st.text_input("1. 請輸入股票或 ETF 代號 (如: 0050, 2330, TSLA)", value="2412").strip().upper().replace('.TW', '').replace('.TWO', '')
-with col2:
-    horizon_input = st.text_input("2. 請輸入預計投資的時間年限 (如: 10年, 半年, 存股, 當沖)", value="1年").strip()
+# 2. 版面置中集中 (縮小兩側空白區域，聚焦於中間)
+_, center_col, _ = st.columns([1, 8, 1])
 
-if st.button("🚀 開始分析"):
-    if raw_ticker:
-        with st.spinner("正在連接市場資料庫並進行大量運算，請稍候..."):
-            f = io.StringIO()
-            with redirect_stdout(f):
-                try:
-                    system = MasterRoutingSystem()
-                    matched_horizon = parse_investment_horizon(horizon_input)
-                    horizon_years = get_horizon_years(matched_horizon)
-                    ticker_yf, is_etf, stock_name, market_label = system.auto_detect_type(raw_ticker)
-                    
-                    print(f"✅ 成功辨識：{stock_name} ({ticker_yf}) - 屬於【{market_label}】市場")
-                    
-                    if is_etf:
-                        print(f"🎯 系統判定為【ETF】，啟動【ETF量化籌碼與波段分析引擎】...\n")
-                        analyzer = ETFAnalyzer(raw_ticker, ticker_yf, stock_name, horizon_years)
-                        analyzer.fetch_data()
-                        analyzer.fetch_institutional_data()
-                        analyzer.calculate_indicators()
-                        analyzer.analyze_score()
-                        analyzer.display_report()
-                    else:
-                        print(f"🎯 系統判定為【個股】，啟動【個股多維度價值與技術分析引擎】...\n")
-                        evaluator = StockEvaluator(raw_ticker, ticker_yf, stock_name, market_label, matched_horizon, system.fm)
-                        evaluator.evaluate()
+with center_col:
+    raw_ticker = st.text_input("輸入欲分析的標的", placeholder="🔍 請輸入股票或 ETF 代號 (如: 0050, 2330, TSLA)", value="2412").strip().upper().replace('.TW', '').replace('.TWO', '')
+    horizon_input = st.text_input("預設投資策略與年限", placeholder="⏳ 請輸入預計投資的時間年限 (如: 10年, 半年, 存股, 當沖)", value="1年").strip()
+
+    # Google 搜尋按鈕
+    if st.button("Google 搜尋 (開始分析)"):
+        if raw_ticker:
+            with st.spinner("正在連接市場資料庫並進行大量運算，請稍候..."):
+                f = io.StringIO()
+                with redirect_stdout(f):
+                    try:
+                        system = MasterRoutingSystem()
+                        matched_horizon = parse_investment_horizon(horizon_input)
+                        horizon_years = get_horizon_years(matched_horizon)
+                        ticker_yf, is_etf, stock_name, market_label = system.auto_detect_type(raw_ticker)
                         
-                except Exception as e:
-                    print(f"\n❌ 系統執行過程中發生錯誤: {e}")
-                    print("請檢查您的網路連線，或確認輸入的證券代號是否有效。")
-            
-            report_output = f.getvalue()
-            st.code(report_output, language="text")
-            st.success("分析完成！")
-    else:
-        st.warning("請先輸入股票代號！")
+                        print(f"✅ 成功辨識：{stock_name} ({ticker_yf}) - 屬於【{market_label}】市場")
+                        
+                        if is_etf:
+                            print(f"🎯 系統判定為【ETF】，啟動【ETF量化籌碼與波段分析引擎】...\n")
+                            analyzer = ETFAnalyzer(raw_ticker, ticker_yf, stock_name, horizon_years)
+                            analyzer.fetch_data()
+                            analyzer.fetch_institutional_data()
+                            analyzer.calculate_indicators()
+                            analyzer.analyze_score()
+                            analyzer.display_report()
+                        else:
+                            print(f"🎯 系統判定為【個股】，啟動【個股多維度價值與技術分析引擎】...\n")
+                            evaluator = StockEvaluator(raw_ticker, ticker_yf, stock_name, market_label, matched_horizon, system.fm)
+                            evaluator.evaluate()
+                            
+                    except Exception as e:
+                        print(f"\n❌ 系統執行過程中發生錯誤: {e}")
+                        print("請檢查您的網路連線，或確認輸入的證券代號是否有效。")
+                
+                report_output = f.getvalue()
+                
+                # 輸出區塊
+                st.markdown("<br>", unsafe_allow_html=True) # 增加一些緩衝空間
+                st.code(report_output, language="text")
+        else:
+            st.warning("請先輸入股票或 ETF 代號！")
