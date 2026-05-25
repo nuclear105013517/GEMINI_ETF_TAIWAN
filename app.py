@@ -131,11 +131,21 @@ def create_card(title, value, custom_html="", list_items=None, use_small_value=F
 # ==========================================
 # 核心邏輯層 (優化重構區)
 # ==========================================
+# ==========================================
+# 修正 1：投資年限解析函數 (加入極短線防呆機制)
+# ==========================================
 def parse_investment_horizon(text):
     text = text.replace(" ", "")
+    
+    # 【重大修正】分離出不支援的極短線交易
+    if any(k in text for k in ["當沖", "日內", "Tick"]): 
+        return "當沖 (不支援)"
+    if any(k in text for k in ["隔日沖", "極短線"]): 
+        return "隔日沖 (不支援)"
+        
     if any(k in text for k in ["存股", "長期", "不賣", "退休"]): return "5年以上"
-    if any(k in text for k in ["短線", "當沖", "隔日沖"]): return "1-3個月"
     if "半年" in text: return "3-6個月"
+    if any(k in text for k in ["天", "日", "周", "週", "短線"]): return "1-3個月"
 
     replace_map = {"一": "1", "兩": "2", "二": "2", "三": "3", "四": "4", "五": "5"}
     for k, v in replace_map.items(): text = text.replace(k, v)
@@ -161,9 +171,8 @@ def parse_investment_horizon(text):
             elif months <= 36: return "1-3年"
             else: return "3-5年"
         return "3-6個月"
-    if any(k in text for k in ["天", "日", "周", "週"]): return "1-3個月"
-    return "1年" 
 
+    return "1年"
 def get_horizon_years(horizon_str):
     mapping = {"1-3個月": 0.25, "3-6個月": 0.5, "1年": 1.0, "1-3年": 2.0, "3-5年": 4.0, "5年以上": 5.0}
     return mapping.get(horizon_str, 1.0)
@@ -549,18 +558,29 @@ st.markdown('<div class="ios-sub-title">Quantitative Decision System for Taiwan 
 with st.container():
     col1, col2 = st.columns(2)
     with col1: raw_ticker = st.text_input("股票或 ETF 代號, 例如: 0050, 2330, TSLA", value="2412").strip().upper().replace('.TW', '').replace('.TWO', '')
-    with col2: horizon_input = st.text_input("預計投資年限, 例如: 1年, 當沖, 退休, 10年", value="1年").strip()
+    with col2: horizon_input = st.text_input("預計投資年限, 例如: 1個月, 1年, 10年, 退休", value="1年").strip()
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 btn_col1, btn_col2 = st.columns([1, 4])
 with btn_col1: start_analysis = st.button("開始分析")
 
+# ==========================================
+# 修正 2：主程式 UI 攔截機制 (放在 btn_col1 按下後的邏輯中)
+# ==========================================
 if start_analysis and raw_ticker:
     with st.spinner("連接市場資料庫運算中..."):
         try:
-            system = MasterRoutingSystem()
             matched_horizon = parse_investment_horizon(horizon_input)
+            
+            # 【重大修正】攔截不支援的交易頻率，並給予實務建議
+            if "不支援" in matched_horizon:
+                st.error("⚠️ **系統限制警告：數據顆粒度不足**")
+                st.warning(f"您輸入的投資週期為「{horizon_input}」。本系統採用『日 K 線 (Daily)』與『盤後籌碼』進行運算。要進行當沖或隔日沖，需要串接 Tick 逐筆撮合數據、日內 VWAP (成交均價線) 以及即時五檔報價，使用日線指標（如 MACD、20MA）進行日內交易決策將導致嚴重的虧損風險。請重新輸入「1個月」以上的投資週期。")
+                st.stop() # 停止向下執行
+
+            # 以下接續原有的系統運算邏輯...
+            system = MasterRoutingSystem()
             horizon_years = get_horizon_years(matched_horizon)
             ticker_yf, is_etf, stock_name, market_label = system.auto_detect_type(raw_ticker)
             
