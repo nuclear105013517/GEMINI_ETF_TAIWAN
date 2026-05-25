@@ -131,13 +131,10 @@ def create_card(title, value, custom_html="", list_items=None, use_small_value=F
 # ==========================================
 # 核心邏輯層 (優化重構區)
 # ==========================================
-# ==========================================
-# 修正 1：投資年限解析函數 (加入極短線防呆機制)
-# ==========================================
 def parse_investment_horizon(text):
     text = text.replace(" ", "")
     
-    # 【重大修正】分離出不支援的極短線交易
+    # 攔截不支援的極短線交易
     if any(k in text for k in ["當沖", "日內", "Tick"]): 
         return "當沖 (不支援)"
     if any(k in text for k in ["隔日沖", "極短線"]): 
@@ -173,6 +170,7 @@ def parse_investment_horizon(text):
         return "3-6個月"
 
     return "1年"
+
 def get_horizon_years(horizon_str):
     mapping = {"1-3個月": 0.25, "3-6個月": 0.5, "1年": 1.0, "1-3年": 2.0, "3-5年": 4.0, "5年以上": 5.0}
     return mapping.get(horizon_str, 1.0)
@@ -292,7 +290,6 @@ class ETFAnalyzer:
         s = self.score
         latest = self.data.iloc[-1]
         
-        # 短期看技術面籌碼分數
         if term_type == "1-3個月":
             if s >= 6: return "強烈建議進場 (短線多頭爆發力)"
             elif s >= 2: return "建議進場 (短線趨勢偏多)"
@@ -302,13 +299,11 @@ class ETFAnalyzer:
             if s >= 4: return "強烈建議進場 (波段買點浮現)"
             elif s >= 1: return "建議分批進場 (波段趨勢尚可)"
             else: return "建議觀望 (波段仍有下探風險)"
-            
-        # 中長期看位階與均線 (修正原本無腦長線建議)
         elif term_type == "1年" or term_type == "1-3年":
             if latest['Close'] < latest['SMA_60']: return "建議單筆加碼 (位階低於季線，中線便宜)"
             elif s > -2: return "建議定期定額進場 (平滑成本)"
             else: return "建議觀望或小額定額 (技術面偏高)"
-        else: # 3-5年 或 5年以上
+        else:
             if latest['Close'] < latest['SMA_60']: return "強烈建議大額投入 (長線絕佳便宜位階)"
             else: return "建議持續定期定額 (紀律投資建立護城河)"
 
@@ -321,9 +316,13 @@ class ETFAnalyzer:
 
         all_horizons = [f"[{term}] {self.get_time_based_advice(term)}" for term in ["1-3個月", "3-6個月", "1年", "1-3年", "3-5年", "5年以上"]]
         
+        # 格式化最後一筆資料的時間
+        latest_time_str = latest.name.strftime("%Y/%m/%d %H:%M")
+        
         return {
             "type": "ETF", "name": self.etf_name, "ticker": self.ticker_yf,
-            "price": current_price, "g_low": g_low, "g_high": g_high,
+            "price": current_price, "latest_time": latest_time_str,
+            "g_low": g_low, "g_high": g_high,
             "score": self.score, "matched_tier": matched_tier,
             "advice": self.get_time_based_advice(matched_tier),
             "details": self.evaluation_details, "all_horizons": all_horizons
@@ -337,7 +336,6 @@ class StockEvaluator:
         self.fm, self.stock, self.df, self.info = fm, yf.Ticker(self.ticker), pd.DataFrame(), {}
         self.is_us_stock = market_label == "美股/全球"
         
-        # 基礎權重設定
         base_horizons = {
             "1-3個月": {"fund": 0.1, "tech": 0.6, "chip": 0.3, "desc": "極短線依賴技術型態與動能"},
             "3-6個月": {"fund": 0.2, "tech": 0.5, "chip": 0.3, "desc": "短中線重視技術與大戶流向"},
@@ -347,7 +345,6 @@ class StockEvaluator:
             "5年以上": {"fund": 0.9, "tech": 0.1, "chip": 0.0, "desc": "極長線純看財務體質"}
         }
         
-        # 【優化】若是美股，籌碼面歸零，並按比例平攤給基本面與技術面
         self.horizons = {}
         for k, v in base_horizons.items():
             if self.is_us_stock and v['chip'] > 0:
@@ -376,11 +373,9 @@ class StockEvaluator:
 
     def analyze_fundamentals(self):
         score, details = 0, []
-        # 【優化】滿分由 30 調整為 40 分，給予容錯空間
         pe = self.info.get('trailingPE', self.info.get('forwardPE'))
         pb, roe, yield_pct, eps = self.info.get('priceToBook'), self.info.get('returnOnEquity'), self.info.get('dividendYield'), self.info.get('trailingEps')
         
-        # 針對美股科技股放寬 PE 門檻
         pe_threshold = 30 if self.is_us_stock else 20
         if pe is not None:
             if 0 < pe <= pe_threshold: score += 15; details.append(f"[+15分] 本益比({pe:.1f}) 合理估值內")
@@ -390,7 +385,7 @@ class StockEvaluator:
         else: score += 5; details.append("[+5分] 本益比資料未提供")
 
         if pb is not None:
-            pb_threshold = 10 if self.is_us_stock else 3.5 # 美股科技股PB極高屬常態
+            pb_threshold = 10 if self.is_us_stock else 3.5
             if 0 < pb < pb_threshold: score += 5; details.append(f"[+5分] 股價淨值比({pb:.1f}) 相對安全")
             else: details.append(f"[ 0分] 股價淨值比({pb:.1f}) 偏高")
         else: score += 2; details.append("[+2分] 淨值比資料未提供")
@@ -408,10 +403,9 @@ class StockEvaluator:
             else: score += 2; details.append(f"[+2分] 殖利率({yield_val:.1f}%) (成長股常態)")
         else: score += 2; details.append("[+2分] 殖利率資料未提供")
 
-        return min(score, 40), details, eps # 上限 40 分
+        return min(score, 40), details, eps
 
     def analyze_technicals(self):
-        # 【優化】雙軌制技術評分：順勢多頭軌道 vs 超跌反轉軌道 (滿分40)
         score, details = 0, []
         latest, prev = self.df.iloc[-1], self.df.iloc[-2]
         if latest['Volume_5MA'] < 500000: details.append(f"[警告] 近5日均量低 ({latest['Volume_5MA']/1000:.0f}張)，留意流動性")
@@ -419,7 +413,6 @@ class StockEvaluator:
         trend_score, rev_score = 0, 0
         trend_msg, rev_msg = "", ""
 
-        # 軌道 1：順勢多頭
         if latest['Close'] > latest['MA20'] > latest['MA60']: 
             trend_score += 25; trend_msg = "[順勢 +25] 股價 > 月線 > 季線，完美多頭"
         elif latest['Close'] > latest['MA60']: 
@@ -427,7 +420,6 @@ class StockEvaluator:
             
         if latest['K'] >= 50: trend_score += 15; trend_msg += " (KD強勢整理)"
 
-        # 軌道 2：超跌反轉 (通常跌破均線，但 KD 極低)
         recent_low = self.df['Low'].tail(20).min()
         if latest['Close'] <= recent_low * 1.05: 
             rev_score += 20; rev_msg = f"[反轉 +20] 接近近20日低點支撐({recent_low:.2f})"
@@ -436,7 +428,6 @@ class StockEvaluator:
             rev_score += 15; rev_msg += f" (KD超賣區 {latest['K']:.1f})"
             if latest['K'] > latest['D'] and prev['K'] <= prev['D']: rev_score += 5; rev_msg += "且黃金交叉"
 
-        # 取兩條軌道最高者
         if trend_score >= rev_score:
             score += trend_score; details.append(trend_msg if trend_msg else "[ 0分] 技術面走空，無多頭特徵")
         else:
@@ -448,11 +439,9 @@ class StockEvaluator:
     def analyze_chips(self):
         score, details = 0, []
         if self.is_us_stock:
-            # 權重已在 init 轉移，這邊回傳 0 即可，介面上會顯示不適用
             details.append("[0分] 美股自動轉移籌碼權重至基本面與技術面")
             return 0, details
 
-        # 滿分 20 分
         start_date = (datetime.date.today() - datetime.timedelta(days=40)).strftime("%Y-%m-%d")
         try:
             df_inst = self.fm.taiwan_stock_institutional_investors(stock_id=self.raw_ticker, start_date=start_date)
@@ -488,11 +477,10 @@ class StockEvaluator:
     def get_report_data(self):
         self.fetch_data()
         self.calculate_indicators()
-        fund_score, fund_details, eps = self.analyze_fundamentals() # Max 40
-        tech_score, tech_details, support, resistance = self.analyze_technicals() # Max 40
-        chip_score, chip_details = self.analyze_chips() # Max 20
+        fund_score, fund_details, eps = self.analyze_fundamentals() 
+        tech_score, tech_details, support, resistance = self.analyze_technicals() 
+        chip_score, chip_details = self.analyze_chips() 
 
-        # 計算百分比分數 (滿分都是 100)
         f_pct, t_pct, c_pct = (fund_score / 40) * 100, (tech_score / 40) * 100, (chip_score / 20 if chip_score>0 else 0) * 100
         
         user_w = self.horizons[self.matched_horizon]
@@ -506,9 +494,13 @@ class StockEvaluator:
             h_total = (f_pct * w['fund']) + (t_pct * w['tech']) + (c_pct * w['chip'])
             all_horizons.append(f"[{horizon}] {self._get_advice_level(h_total)}")
 
+        # 格式化最後一筆資料的時間
+        latest = self.df.iloc[-1]
+        latest_time_str = latest.name.strftime("%Y/%m/%d %H:%M")
+
         return {
             "type": "Stock", "name": self.stock_name, "ticker": self.ticker,
-            "price": self.df['Close'].iloc[-1], "eps": eps,
+            "price": latest['Close'], "latest_time": latest_time_str, "eps": eps,
             "support": support, "resistance": resistance,
             "user_horizon": self.user_horizon_text, "matched_horizon": self.matched_horizon,
             "user_total": user_total, "advice": self._get_advice_level(user_total),
@@ -550,7 +542,7 @@ class MasterRoutingSystem:
         return ticker_yf, is_etf, stock_name, market_label
 
 # ==========================================
-# 網頁 UI 綁定層 (保持原樣不變)
+# 網頁 UI 綁定層
 # ==========================================
 st.markdown('<div class="ios-large-title">台美股與 ETF 量化決策系統</div>', unsafe_allow_html=True)
 st.markdown('<div class="ios-sub-title">Quantitative Decision System for Taiwan and US Stocks and ETFs</div>', unsafe_allow_html=True)
@@ -565,21 +557,17 @@ st.markdown("<br>", unsafe_allow_html=True)
 btn_col1, btn_col2 = st.columns([1, 4])
 with btn_col1: start_analysis = st.button("開始分析")
 
-# ==========================================
-# 修正 2：主程式 UI 攔截機制 (放在 btn_col1 按下後的邏輯中)
-# ==========================================
 if start_analysis and raw_ticker:
     with st.spinner("連接市場資料庫運算中..."):
         try:
             matched_horizon = parse_investment_horizon(horizon_input)
             
-            # 【重大修正】攔截不支援的交易頻率，並給予實務建議
+            # 攔截不支援的極短線交易
             if "不支援" in matched_horizon:
                 st.error("⚠️ **系統限制警告：數據顆粒度不足**")
                 st.warning(f"您輸入的投資週期為「{horizon_input}」。本系統採用『日 K 線 (Daily)』與『盤後籌碼』進行運算。要進行當沖或隔日沖，需要串接 Tick 逐筆撮合數據、日內 VWAP (成交均價線) 以及即時五檔報價，使用日線指標（如 MACD、20MA）進行日內交易決策將導致嚴重的虧損風險。請重新輸入「1個月」以上的投資週期。")
                 st.stop() # 停止向下執行
 
-            # 以下接續原有的系統運算邏輯...
             system = MasterRoutingSystem()
             horizon_years = get_horizon_years(matched_horizon)
             ticker_yf, is_etf, stock_name, market_label = system.auto_detect_type(raw_ticker)
@@ -597,7 +585,8 @@ if start_analysis and raw_ticker:
                 data = analyzer.get_report_data()
                 
                 c1, c2, c3 = st.columns(3)
-                with c1: st.markdown(create_card("最新收盤價", f"${data['price']:.2f}", icon="💵"), unsafe_allow_html=True)
+                # 【修改處】在此卡片的 footer 中加入時間
+                with c1: st.markdown(create_card("最新收盤價", f"${data['price']:.2f}", footer=f"報價時間: {data['latest_time']}", icon="💵"), unsafe_allow_html=True)
                 with c2: st.markdown(create_card("承接區間", f"${data['g_low']:.2f} - ${data['g_high']:.2f}", footer="需配合折溢價判斷", icon="🎯"), unsafe_allow_html=True)
                 with c3: st.markdown(create_card("短線技術評分", f"{data['score']}", footer="量化多空指標", icon="⭐️"), unsafe_allow_html=True)
                 
@@ -612,7 +601,8 @@ if start_analysis and raw_ticker:
                 data = evaluator.get_report_data()
                 
                 c1, c2, c3 = st.columns(3)
-                with c1: st.markdown(create_card("最新收盤價", f"${data['price']:,.2f}", icon="💵"), unsafe_allow_html=True)
+                # 【修改處】在此卡片的 footer 中加入時間
+                with c1: st.markdown(create_card("最新收盤價", f"${data['price']:,.2f}", footer=f"報價時間: {data['latest_time']}", icon="💵"), unsafe_allow_html=True)
                 with c2: st.markdown(create_card("短線支撐區間", f"${data['support']:,.2f} - ${data['support']*1.05:,.2f}", footer="波段防守點", icon="🛡️"), unsafe_allow_html=True)
                 eps_text = f"${data['eps']:.2f}" if data['eps'] is not None else "N/A"
                 with c3: st.markdown(create_card("近四季 EPS", eps_text, footer="基本面獲利指標", icon="📈"), unsafe_allow_html=True)
