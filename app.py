@@ -317,7 +317,7 @@ class ETFAnalyzer:
         all_horizons = [f"[{term}] {self.get_time_based_advice(term)}" for term in ["1-3個月", "3-6個月", "1年", "1-3年", "3-5年", "5年以上"]]
         
         # 格式化最後一筆資料的時間
-        latest_time_str = latest.name.strftime("%Y/%m/%d %H:%M")
+        latest_time_str = latest.name.strftime("%Y/%m/%d")
         
         return {
             "type": "ETF", "name": self.etf_name, "ticker": self.ticker_yf,
@@ -496,7 +496,7 @@ class StockEvaluator:
 
         # 格式化最後一筆資料的時間
         latest = self.df.iloc[-1]
-        latest_time_str = latest.name.strftime("%Y/%m/%d %H:%M")
+        latest_time_str = latest.name.strftime("%Y/%m/%d")
 
         return {
             "type": "Stock", "name": self.stock_name, "ticker": self.ticker,
