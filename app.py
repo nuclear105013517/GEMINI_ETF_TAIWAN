@@ -12,7 +12,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ==========================================
-# 介面設定與 iOS CSS (保留原版優異的 UI)
+# 介面設定與 iOS CSS 
 # ==========================================
 st.set_page_config(page_title="台美股/ETF 量化決策系統", layout="wide", initial_sidebar_state="collapsed")
 
@@ -190,7 +190,9 @@ def run_historical_backtest(df, horizon_str, is_weekly_data=False):
     forward_bars = bar_mapping_weekly.get(horizon_str, 52) if is_weekly_data else bar_mapping_daily.get(horizon_str, 20)
     
     backtest_df = df.copy()
-    if 'MA60' not in backtest_df.columns:
+    
+    # 專家修正：嚴格的欄位防呆檢查，確保系統不中斷
+    if not all(col in backtest_df.columns for col in ['MA20', 'MA60', 'RSI_14']):
         return None, 0
 
     backtest_df['Forward_Return'] = backtest_df['Close'].shift(-forward_bars) - backtest_df['Close']
@@ -200,12 +202,10 @@ def run_historical_backtest(df, horizon_str, is_weekly_data=False):
         return None, 0
         
     latest = backtest_df.iloc[-1]
-    
-    # 專家修正：長短線回測特徵動態分離
     is_long_term = get_horizon_years(horizon_str) >= 1.0
     
     if is_long_term:
-        # 長線回測：重視長期均線位階與宏觀趨勢，忽略 RSI 等短線雜訊
+        # 長線回測：重視長期均線位階與宏觀趨勢
         if 'MA200' in backtest_df.columns and not pd.isna(latest['MA200']):
             current_trend_up = latest['Close'] > latest['MA200']
             cond_trend = backtest_df['Close'] > backtest_df['MA200'] if current_trend_up else backtest_df['Close'] <= backtest_df['MA200']
@@ -260,7 +260,6 @@ class ETFAnalyzer:
             raise ValueError(f"無法獲取 {self.ticker_yf} 足夠資料。")
 
     def fetch_institutional_data(self):
-        # 原邏輯不變 (籌碼爬取)
         if not self.is_tw_stock or self.is_weekly: return
         pure_ticker, headers = self.raw_ticker, {'User-Agent': 'Mozilla/5.0'}
         def to_shares(val):
@@ -291,7 +290,7 @@ class ETFAnalyzer:
         df = self.data
         df['MA20'] = df['Close'].rolling(window=20).mean()
         df['MA60'] = df['Close'].rolling(window=60).mean()
-        df['MA200'] = df['Close'].rolling(window=200).mean() # 專家修正：納入年線
+        df['MA200'] = df['Close'].rolling(window=200).mean()
         df['BIAS_20'] = ((df['Close'] - df['MA20']) / df['MA20']) * 100
         
         delta = df['Close'].diff()
@@ -315,13 +314,11 @@ class ETFAnalyzer:
         self.evaluation_details.append("[注意] 本分析採用『還原總報酬權值』，歷史股息已自動回填。")
         self.evaluation_details.append("[警告] 最終獲利受『折溢價率』影響極大，下單前請確認即時折溢價。")
 
-        # 籌碼面評估 (不受長短線影響，因為是實金流入)
         if self.institutional_data:
             total_net = (self.institutional_data['foreign'] + self.institutional_data['sitc'] + self.institutional_data['dealer']) / 1000
             if total_net > 500: self.score += 10; self.evaluation_details.append(f"[+10分] 法人單日買超 {total_net:,.0f} 張")
             elif total_net < -500: self.score -= 10; self.evaluation_details.append(f"[-10分] 法人單日賣超 {abs(total_net):,.0f} 張")
 
-        # 專家修正：動態切換評分邏輯
         if is_long_term:
             self.evaluation_details.append("[策略] 投資時長大於1年，屏蔽 KD/RSI 等短線震盪雜訊，著重均線護城河位階。")
             if pd.notna(latest['MA200']):
@@ -330,13 +327,11 @@ class ETFAnalyzer:
                 else:
                     self.score -= 10; self.evaluation_details.append("[-10分] 價格跌破年線，長線趨勢轉弱，建議定期定額攤平。")
             
-            # 長線看季線乖離，非月線
             bias60 = ((latest['Close'] - latest['MA60']) / latest['MA60']) * 100
             if pd.notna(bias60):
                 if bias60 < -10: self.score += 15; self.evaluation_details.append(f"[+15分] 季線乖離率 {bias60:.2f}%，長線超跌買點浮現。")
                 elif bias60 > 10: self.score -= 15; self.evaluation_details.append(f"[-15分] 季線乖離率 {bias60:.2f}%，長線溢價偏高。")
         else:
-            # 短線動能評分
             bias = latest['BIAS_20']
             if pd.notna(bias):
                 if bias < -5: self.score += 10; self.evaluation_details.append(f"[+10分] 20均線乖離 {bias:.2f}%，處低檔超跌。")
@@ -384,7 +379,7 @@ class ETFAnalyzer:
             "advice": self.get_time_based_advice(self.horizon_str),
             "details": self.evaluation_details, "all_horizons": all_horizons,
             "win_rate": win_rate_str, "win_rate_footer": win_rate_footer, "is_weekly": self.is_weekly,
-            "support": latest['Close'] * 0.98, "resistance": latest['Close'] * 1.02 # 簡單替代
+            "support": latest['Close'] * 0.98, "resistance": latest['Close'] * 1.02
         }
 
 # ==========================================
@@ -435,6 +430,12 @@ class StockEvaluator:
         self.df['MA20'], self.df['MA60'] = self.df['Close'].rolling(20).mean(), self.df['Close'].rolling(60).mean()
         self.df['MA200'] = self.df['Close'].rolling(200).mean() # 加入年線
         
+        # 專家修正：加回短線動能必備的 RSI 運算，以利於歷史引擎調取
+        delta = self.df['Close'].diff()
+        avg_gain = delta.clip(lower=0).ewm(com=13, adjust=False).mean()
+        avg_loss = (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean()
+        self.df['RSI_14'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
+        
         low_min, high_max = self.df['Low'].rolling(9).min(), self.df['High'].rolling(9).max()
         price_diff = (high_max - low_min).replace(0, np.nan)
         self.df['RSV'] = ((self.df['Close'] - low_min) / price_diff) * 100
@@ -452,7 +453,6 @@ class StockEvaluator:
         eps = self.info.get('trailingEps')
         peg = self.info.get('pegRatio') 
 
-        # 專家修正：賦予高 ROE 與優良 PEG 動態容錯空間
         pe_threshold = 28 if self.is_us_stock else 20
         if pe is not None:
             if 0 < pe <= pe_threshold: 
@@ -498,7 +498,6 @@ class StockEvaluator:
         
         if self.is_weekly: details.append("[注意] 系統已切換為『週 K 線』進行長線平滑分析。")
 
-        # 專家修正：長短線均線戰略分離
         if is_long_term:
             if pd.notna(latest['MA200']):
                 if latest['Close'] > latest['MA60'] > latest['MA200']:
@@ -515,7 +514,6 @@ class StockEvaluator:
             else:
                 score -= 5; details.append("[-5分] 均線交織糾結，處於震盪洗盤。")
 
-        # 短線指標僅在短線投資時啟用
         if not is_long_term:
             if latest['K'] < 30:
                 score += 10; details.append(f"[+10分] KD進入低檔超賣 ({latest['K']:.1f})")
@@ -598,7 +596,7 @@ class StockEvaluator:
         }
 
 # ==========================================
-# 核心大腦路由與主程式 (保留不變)
+# 核心大腦路由與主程式
 # ==========================================
 class MasterRoutingSystem:
     def __init__(self):
@@ -640,7 +638,7 @@ def main():
 
     col_input1, col_input2 = st.columns([2, 2])
     with col_input1: user_ticker = st.text_input("輸入股票或 ETF 代號", value="2330", placeholder="例如：2330, 0050, AAPL, QQQ")
-    with col_input2: user_horizon_raw = st.text_input("輸入預期投資時長", value="1年", placeholder="例如：當沖、3個月、5年、定期定額")
+    with col_input2: user_horizon_raw = st.text_input("輸入預期投資時長", value="1天", placeholder="例如：當沖、3個月、5年、定期定額")
 
     if st.button("啟動量化多因子評估"):
         if not user_ticker:
