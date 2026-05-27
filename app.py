@@ -124,7 +124,7 @@ def create_card(title, value, custom_html="", list_items=None, use_small_value=F
 def parse_investment_horizon(text):
     text = text.replace(" ", "")
     if any(k in text for k in ["存股", "長期", "不賣", "退休"]): return "5年以上"
-    if any(k in text for k in ["1日", "Tick", "隔日沖", "極短線", "當沖"]): return "1天"
+    if any(k in text for k in ["1日", "Tick", "隔日沖", "極短線"]): return "1天"
     replace_map = {"一": "1", "兩": "2", "二": "2", "三": "3", "四": "4", "五": "5", "十年": "10年"}
     for k, v in replace_map.items(): text = text.replace(k, v)
     
@@ -725,7 +725,7 @@ def main():
 
     col_input1, col_input2 = st.columns([2, 2])
     with col_input1: user_ticker = st.text_input("輸入股票或 ETF 代號", value="2330", placeholder="例如：2330, 0050, AAPL, QQQ")
-    with col_input2: user_horizon_raw = st.text_input("輸入預期投資時長", value="1個月", placeholder="例如：當沖、3個月、5年")
+    with col_input2: user_horizon_raw = st.text_input("輸入預期投資時長", value="1個月", placeholder="例如：1天、3個月、5年")
 
     if st.button("啟動機構級別量化評估"):
         if not user_ticker:
