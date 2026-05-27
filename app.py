@@ -89,7 +89,7 @@ ios_css = """
 st.markdown(ios_css, unsafe_allow_html=True)
 
 # ==========================================
-# 工具函數區與 API 快取 
+# 工具函數區
 # ==========================================
 def format_list_item(item, force_blue=False):
     item = str(item).replace('⚠️', '').strip()
@@ -100,7 +100,7 @@ def format_list_item(item, force_blue=False):
         if force_blue: badge_class = "badge-blue"
         elif '多頭' in tag or '+' in tag or '強烈' in content: badge_class = "badge-green"
         elif '空頭' in tag or '-' in tag or '風險' in content or '警告' in tag: badge_class = "badge-red"
-        elif '0' in tag or '無效' in content: badge_class = "badge-gray"
+        elif '0' in tag or '無效' in content or '中性' in tag: badge_class = "badge-gray"
         elif '注意' in tag or '支撐' in tag: badge_class = "badge-orange"
         else: badge_class = "badge-blue"
         return f"<li class='ios-list-item'><div class='ios-badge {badge_class}'>{tag}</div><div class='ios-list-text'>{content}</div></li>"
@@ -172,9 +172,9 @@ def get_horizon_years(horizon_str):
 @st.cache_data(ttl=3600)
 def fetch_twse_institutional_cache(pure_ticker, date_str):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
         url = f"https://www.twse.com.tw/rwd/zh/fund/T86?response=json&date={date_str}&selectType=ALL"
-        res = requests.get(url, headers=headers, timeout=3).json()
+        res = requests.get(url, headers=headers, timeout=5).json()
         if res.get('stat') == 'OK' and 'data' in res:
             fields = res['fields']
             idx_id = fields.index("證券代號") if "證券代號" in fields else 0
@@ -194,100 +194,117 @@ def fetch_twse_institutional_cache(pure_ticker, date_str):
     return None
 
 # ==========================================
-# 優化版：動態期望值與防護回測引擎 (修復勝率幻覺與自相關)
+# 核心優化：動態期望值與嚴謹回測引擎 (修復勝率幻覺與自相關)
 # ==========================================
-def run_historical_backtest(df, horizon_str, is_weekly_data=False, is_tw_market=True):
-    bar_mapping_daily = {"1天": 1, "1-5天": 3, "1個月內": 20, "1-3個月": 40, "3-6個月": 90, "1年": 252, "1-3年": 504, "3-5年": 756, "5年以上": 1260}
-    bar_mapping_weekly = {"1年": 52, "1-3年": 104, "3-5年": 156, "5年以上": 260}
-    
-    forward_bars = bar_mapping_weekly.get(horizon_str, 52) if is_weekly_data else bar_mapping_daily.get(horizon_str, 20)
+def run_historical_backtest(df, horizon_str, is_tw_market=True):
+    # 統一採用日線(1d)回測以確保微觀特徵不丟失
+    bar_mapping_daily = {"1天": 1, "1-5天": 3, "1個月內": 20, "1-3個月": 60, "3-6個月": 120, "1年": 252, "1-3年": 504, "3-5年": 756, "5年以上": 1260}
+    forward_bars = bar_mapping_daily.get(horizon_str, 20)
     backtest_df = df.copy()
     
     if not all(col in backtest_df.columns for col in ['MA20', 'MA60', 'ATR', 'BIAS_20']):
         return None, 0, 0.0, 0.0
 
-    # 1. 引入精準摩擦成本
+    # 1. 精準微觀摩擦成本 (Friction Costs)
     if is_tw_market:
         if forward_bars == 1:
-            friction_cost = 0.2  # 當沖稅半(0.15%) + 手續費折讓
+            friction_cost = 0.22  # 當沖：稅(0.15%) + 雙邊手續費折讓約 0.07%
         elif forward_bars <= 20:
-            friction_cost = 0.45 # 短波段：完整稅(0.3%) + 雙邊手續費
+            friction_cost = 0.45  # 短波段：完整稅(0.3%) + 雙邊手續費
         else:
-            friction_cost = 0.5  # 長波段
+            friction_cost = 0.5   # 長波段滑價預留
     else:
-        friction_cost = 0.05 # 美股手續費極低
+        friction_cost = 0.05      # 美股免稅，僅微量手續費與滑價
 
-    # 2. 計算真實前瞻報酬
+    # 2. 計算真實前瞻報酬 (扣除摩擦成本)
     backtest_df['Forward_Return_Pct'] = ((backtest_df['Close'].shift(-forward_bars) - backtest_df['Close']) / backtest_df['Close'] * 100)
-    
-    # 強制扣除雙邊摩擦成本，避免 EV 虛高
     backtest_df['Forward_Return_Pct'] -= friction_cost
     backtest_df['Is_Win'] = backtest_df['Forward_Return_Pct'] > 0
     
-    if len(backtest_df) < forward_bars + 60:
+    # 拋棄無法驗證未來的最新資料
+    backtest_df = backtest_df.dropna(subset=['Forward_Return_Pct'])
+    if len(backtest_df) < 60:
         return None, 0, 0.0, 0.0
         
-    # 3. 升級多維度 KNN 匹配：趨勢、波動度、乖離率
+    # 3. 動態特徵匹配 (Dynamic Feature Matching)
     backtest_df['ATR_Pct'] = (backtest_df['ATR'] / backtest_df['Close']) * 100
-    backtest_df['Trend_Direction'] = backtest_df['Close'] > backtest_df['MA60'] # 大趨勢判斷
+    backtest_df['Trend_Direction'] = backtest_df['Close'] > backtest_df['MA60']
     
-    latest = backtest_df.iloc[-1]
+    # 取得最新狀態 (使用原始 df 的最後一筆，因 backtest_df 已 dropna)
+    latest = df.iloc[-1]
     current_bias = latest['BIAS_20']
-    current_atr_pct = latest['ATR_Pct']
-    current_trend = latest['Trend_Direction']
+    current_atr_pct = (latest['ATR'] / latest['Close']) * 100
+    current_trend = latest['Close'] > latest['MA60']
     
-    # 尋找歷史上：乖離率相近(±2%) + 波動度相近(±1.5%) + 季線趨勢相同 的真實情境
+    # 縮減匹配寬容度，使用與當前 ATR 相關的動態閾值，取代定值
+    bias_tolerance = max(1.0, current_atr_pct * 0.5)
+    atr_tolerance = max(0.5, current_atr_pct * 0.3)
+    
     similar_cond = (
-        (backtest_df['BIAS_20'] >= current_bias - 2) & 
-        (backtest_df['BIAS_20'] <= current_bias + 2) &
-        (backtest_df['ATR_Pct'] >= current_atr_pct - 1.5) &
-        (backtest_df['ATR_Pct'] <= current_atr_pct + 1.5) &
+        (backtest_df['BIAS_20'] >= current_bias - bias_tolerance) & 
+        (backtest_df['BIAS_20'] <= current_bias + bias_tolerance) &
+        (backtest_df['ATR_Pct'] >= current_atr_pct - atr_tolerance) &
+        (backtest_df['ATR_Pct'] <= current_atr_pct + atr_tolerance) &
         (backtest_df['Trend_Direction'] == current_trend)
     )
     
-    similar_df = backtest_df[similar_cond].dropna(subset=['Is_Win', 'Forward_Return_Pct'])
+    matched_indices = backtest_df[similar_cond].index
+    
+    # 4. 貪婪演算法：過濾重疊樣本 (Greedy Non-overlapping Filter)
+    # 避免連續 N 天都符合條件，導致勝率被自相關性嚴重扭曲
+    independent_matches = []
+    last_valid_idx = -1
+    
+    for i in range(len(matched_indices)):
+        idx_pos = backtest_df.index.get_loc(matched_indices[i])
+        if last_valid_idx == -1 or (idx_pos - last_valid_idx) >= forward_bars:
+            independent_matches.append(matched_indices[i])
+            last_valid_idx = idx_pos
+
+    similar_df = backtest_df.loc[independent_matches]
     sample_size = len(similar_df)
     
-    # 4. 樣本數門檻提高至 30 且排除近期未實現數據
-    if sample_size >= 30:
+    # 5. 獨立樣本數門檻判定
+    if sample_size >= 15: # 獨立樣本門檻 (15次不重疊事件在統計上已具備一定顯著性)
         win_rate = (similar_df['Is_Win'].sum() / sample_size) * 100
-        avg_return = similar_df['Forward_Return_Pct'].mean()
+        expected_value = similar_df['Forward_Return_Pct'].mean() # 數學上等同於 (Win%*AvgWin) + (Loss%*AvgLoss)
         
-        avg_win = similar_df[similar_df['Is_Win']]['Forward_Return_Pct'].mean() if similar_df['Is_Win'].sum() > 0 else 0
-        avg_loss = similar_df[~similar_df['Is_Win']]['Forward_Return_Pct'].mean() if (~similar_df['Is_Win']).sum() > 0 else 0
-        
-        expected_value = ((win_rate/100) * avg_win) + (((100-win_rate)/100) * avg_loss)
-        return win_rate, sample_size, avg_return, expected_value
+        return win_rate, sample_size, similar_df['Forward_Return_Pct'].mean(), expected_value
     else:
         return None, sample_size, 0.0, 0.0
 
 # ==========================================
-# 資料清洗與特徵工程共用模組
+# 資料清洗與特徵工程模組 (優化 Pandas 碎片化)
 # ==========================================
 def calculate_common_indicators(df):
-    df['MA20'] = df['Close'].rolling(window=20).mean()
-    df['MA60'] = df['Close'].rolling(window=60).mean()
-    df['MA200'] = df['Close'].rolling(window=200).mean()
-    df['BIAS_20'] = ((df['Close'] - df['MA20']) / df['MA20']) * 100
+    new_cols = {}
+    new_cols['MA20'] = df['Close'].rolling(window=20).mean()
+    new_cols['MA60'] = df['Close'].rolling(window=60).mean()
+    new_cols['MA200'] = df['Close'].rolling(window=200).mean()
+    new_cols['BIAS_20'] = ((df['Close'] - new_cols['MA20']) / new_cols['MA20']) * 100
     
     delta = df['Close'].diff()
     avg_gain = delta.clip(lower=0).ewm(com=13, adjust=False).mean()
     avg_loss = (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean()
-    df['RSI_14'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
+    new_cols['RSI_14'] = 100 - (100 / (1 + (avg_gain / avg_loss)))
     
-    df['High_Low'] = df['High'] - df['Low']
-    df['High_Close'] = np.abs(df['High'] - df['Close'].shift())
-    df['Low_Close'] = np.abs(df['Low'] - df['Close'].shift())
-    df['TR'] = df[['High_Low', 'High_Close', 'Low_Close']].max(axis=1)
-    df['ATR'] = df['TR'].rolling(window=14).mean()
+    new_cols['High_Low'] = df['High'] - df['Low']
+    new_cols['High_Close'] = np.abs(df['High'] - df['Close'].shift())
+    new_cols['Low_Close'] = np.abs(df['Low'] - df['Close'].shift())
+    tr = pd.concat([new_cols['High_Low'], new_cols['High_Close'], new_cols['Low_Close']], axis=1).max(axis=1)
+    new_cols['TR'] = tr
+    new_cols['ATR'] = tr.rolling(window=14).mean()
     
-    low_9, high_9 = df['Low'].rolling(window=9).min(), df['High'].rolling(window=9).max()
+    low_9 = df['Low'].rolling(window=9).min()
+    high_9 = df['High'].rolling(window=9).max()
     price_diff = (high_9 - low_9).replace(0, np.nan) 
-    df['RSV'] = ((df['Close'] - low_9) / price_diff) * 100
-    df['RSV'] = df['RSV'].fillna(50)
-    df['K'] = df['RSV'].ewm(com=2, adjust=False).mean()
-    df['D'] = df['K'].ewm(com=2, adjust=False).mean()
+    new_cols['RSV'] = ((df['Close'] - low_9) / price_diff) * 100
+    new_cols['RSV'] = new_cols['RSV'].fillna(50)
+    new_cols['K'] = new_cols['RSV'].ewm(com=2, adjust=False).mean()
+    new_cols['D'] = new_cols['K'].ewm(com=2, adjust=False).mean()
     
+    # 避免 Pandas 碎片化，一次性合併
+    df = pd.concat([df, pd.DataFrame(new_cols, index=df.index)], axis=1)
     return df
 
 # ==========================================
@@ -299,8 +316,8 @@ class ETFAnalyzer:
         self.is_tw_stock = ticker_yf.endswith('.TW') or ticker_yf.endswith('.TWO')
         self.etf_name, self.user_years, self.horizon_str = etf_name, user_years, horizon_str
         self.data, self.score, self.evaluation_details, self.institutional_data = None, 50, [], None
-        self.is_weekly = user_years > 3.0
-        self.interval = "1wk" if self.is_weekly else "1d"
+        # 強制維持 1d 確保微觀資料不遺失
+        self.interval = "1d"
         self.period = "max"
 
     def fetch_data(self):
@@ -315,8 +332,8 @@ class ETFAnalyzer:
             raise ValueError(f"無法獲取 {self.ticker_yf} 足夠資料。")
 
     def fetch_institutional_data(self):
-        if not self.is_tw_stock or self.is_weekly: return
-        for days_back in range(3):
+        if not self.is_tw_stock: return
+        for days_back in range(5): # 增加回溯天數以防遇到假日
             target_date = self.data.index[-1]
             if target_date.tz is not None: target_date = target_date.tz_localize(None)
             target_date -= timedelta(days=days_back)
@@ -335,11 +352,10 @@ class ETFAnalyzer:
         is_long_term = self.user_years >= 1.0
         
         self.evaluation_details.append("[注意] 本分析採用『還原總報酬權值』，歷史股息已自動回填。")
-        self.evaluation_details.append("[警告] 最終獲利受『折溢價率』影響極大，下單前請確認即時折溢價。")
 
         if self.institutional_data:
             total_net = (self.institutional_data['foreign'] + self.institutional_data['sitc'] + self.institutional_data['dealer']) / 1000
-            self.evaluation_details.append(f"[ 0分] 法人單日買賣超 {total_net:,.0f} 張 (註: ETF籌碼多為造市避險，不具強烈方向性)")
+            self.evaluation_details.append(f"[中性] 法人單日買賣超 {total_net:,.0f} 張 (註: ETF籌碼多為造市避險，不具強烈方向性)")
 
         if is_long_term:
             self.evaluation_details.append("[策略] 長期投資屏蔽短線雜訊，專注長週期均線與乖離護城河。")
@@ -363,7 +379,7 @@ class ETFAnalyzer:
             rsi, k, d = latest['RSI_14'], latest['K'], latest['D']
             if pd.notna(rsi):
                 if rsi < 35: self.score += 15; self.evaluation_details.append(f"[+15分] RSI 進入相對低檔 ({rsi:.1f})，適合回檔承接。")
-                elif rsi > 65: self.score -= 15; self.evaluation_details.append(f"[-15分] RSI 進入相對高檔 ({rsi:.1f})。")
+                elif rsi > 70: self.score -= 15; self.evaluation_details.append(f"[-15分] RSI 進入相對高檔 ({rsi:.1f})。")
                 
             if pd.notna(k) and pd.notna(d):
                 if k < 30 and k > d and prev['K'] <= prev['D']: self.score += 15; self.evaluation_details.append("[+15分] KD低檔黃金交叉。")
@@ -387,13 +403,13 @@ class ETFAnalyzer:
 
     def get_report_data(self):
         latest = self.data.iloc[-1]
-        win_rate, sample_size, avg_return, ev = run_historical_backtest(self.data, self.horizon_str, self.is_weekly, self.is_tw_stock)
+        win_rate, sample_size, avg_return, ev = run_historical_backtest(self.data, self.horizon_str, self.is_tw_stock)
         
         if win_rate is not None:
             win_rate_str = f"期望值 {ev:.2f}% | 勝率 {win_rate:.1f}%"
-            win_rate_footer = f"回測基礎: 擷取 {sample_size} 次歷史極度相似結構 (乖離+趨勢+波動度) 驗證"
+            win_rate_footer = f"回測基礎: 擷取 {sample_size} 次歷史極度相似結構 (已排除重疊樣本自相關)"
         else:
-            win_rate_str, win_rate_footer = "樣本顯著性不足", "相似情境低於 30 次，為防統計偏誤 (自相關/過擬合) 不予呈現"
+            win_rate_str, win_rate_footer = "獨立樣本顯著性不足", "相似獨立情境低於 15 次，為防統計偏誤 (自相關/過擬合) 不予呈現"
 
         atr = latest.get('ATR', latest['Close']*0.015)
         if self.user_years <= 0.01: m_atr = 1.0
@@ -410,7 +426,7 @@ class ETFAnalyzer:
             "score": self.score, "matched_tier": self.horizon_str,
             "advice": self.get_time_based_advice(self.horizon_str),
             "details": self.evaluation_details,
-            "win_rate": win_rate_str, "win_rate_footer": win_rate_footer, "is_weekly": self.is_weekly,
+            "win_rate": win_rate_str, "win_rate_footer": win_rate_footer, "is_weekly": False,
             "support": support, "resistance": resistance
         }
 
@@ -426,8 +442,7 @@ class StockEvaluator:
         self.is_us_stock = market_label == "美股/全球"
         
         self.user_years = get_horizon_years(matched_horizon_str)
-        self.is_weekly = self.user_years > 3.0
-        self.interval = "1wk" if self.is_weekly else "1d"
+        self.interval = "1d" # 強制日線確保精確度
         self.period = "max"
         
         base_horizons = {
@@ -460,14 +475,17 @@ class StockEvaluator:
 
     def calculate_indicators(self):
         self.df = calculate_common_indicators(self.df)
-        df = self.df
-        df['BB_Std'] = df['Close'].rolling(20).std()
-        df['BB_Upper'] = df['MA20'] + (2 * df['BB_Std'])
-        df['BB_Lower'] = df['MA20'] - (2 * df['BB_Std'])
-        df['OBV'] = (np.sign(df['Close'].diff()) * df['Volume']).fillna(0).cumsum()
-        df['OBV_MA10'] = df['OBV'].rolling(10).mean()
+        # 追加 BB 與 OBV，避免 DataFrame 碎片化
+        new_cols = {}
+        new_cols['BB_Std'] = self.df['Close'].rolling(20).std()
+        new_cols['BB_Upper'] = self.df['MA20'] + (2 * new_cols['BB_Std'])
+        new_cols['BB_Lower'] = self.df['MA20'] - (2 * new_cols['BB_Std'])
+        new_cols['OBV'] = (np.sign(self.df['Close'].diff()) * self.df['Volume']).fillna(0).cumsum()
+        new_cols['OBV_MA10'] = new_cols['OBV'].rolling(10).mean()
+        self.df = pd.concat([self.df, pd.DataFrame(new_cols, index=self.df.index)], axis=1)
 
     def analyze_fundamentals(self):
+        # 修正：遇到缺少資料時，預設給予 50 分 (中立)，避免嚴重破壞模型權重
         score, details = 50, []
         pe = self.info.get('trailingPE', self.info.get('forwardPE'))
         pb = self.info.get('priceToBook')
@@ -490,18 +508,20 @@ class StockEvaluator:
                     score += 15; details.append(f"[+15分] 靜態本益比({pe:.1f}) 處於合理區間。")
             elif pe > pe_threshold:
                 if roe is not None and roe > 0.2:
-                    score += 0; details.append(f"[ 0分] 本益比({pe:.1f}) 偏高，但受惠高 ROE (>20%) 給予估值溢價。")
+                    score += 0; details.append(f"[中性] 本益比({pe:.1f}) 偏高，但受惠高 ROE (>20%) 給予估值溢價。")
                 else:
                     score -= 15; details.append(f"[-15分] 本益比({pe:.1f}) 偏高溢價，缺乏成長護城河支撐。")
             elif pe <= 0: 
                 score -= 15; details.append("[-15分] 企業處於虧損狀態 (PE < 0)。")
         else: 
-            details.append("[ 0分] 本益比資料未提供")
+            details.append("[中性] 本益比 API 資料暫時缺失，給予基準分。")
 
         if pb is not None:
             pb_threshold = 8.0 if self.is_us_stock else 3.5
             if 0 < pb < pb_threshold: score += 10; details.append(f"[+10分] 股價淨值比({pb:.1f}) 屬安全防禦區間。")
             else: score -= 10; details.append(f"[-10分] 股價淨值比({pb:.1f}) 資產溢價過高。")
+        else:
+            details.append("[中性] 股價淨值比 API 資料暫時缺失。")
 
         if roe is not None:
             roe_val = roe * 100
@@ -515,8 +535,6 @@ class StockEvaluator:
         score, details = 50, []
         latest, prev = self.df.iloc[-1], self.df.iloc[-2]
         is_long_term = self.user_years >= 1.0
-        
-        if self.is_weekly: details.append("[注意] 系統切換至『週 K 線』過濾短期雜訊。")
 
         long_trend_bad = False
         if pd.notna(latest['MA200']):
@@ -560,8 +578,8 @@ class StockEvaluator:
 
     def analyze_chips(self):
         score, details = 50, [] 
-        if self.is_us_stock or self.is_weekly:
-            details.append("[ 0分] 系統已自動將籌碼權重平滑轉移至基本面與趨勢面。")
+        if self.is_us_stock:
+            details.append("[中性] 系統已自動將籌碼權重平滑轉移至基本面與趨勢面。")
             return 50, details
 
         start_date = (datetime.date.today() - datetime.timedelta(days=40)).strftime("%Y-%m-%d")
@@ -573,10 +591,10 @@ class StockEvaluator:
                 
                 if recent_3_days_net > 1000: score += 20; details.append(f"[+20分] 法人近3日累計強力買超 {recent_3_days_net:,.0f} 張")
                 elif recent_3_days_net > 100: score += 10; details.append(f"[+10分] 法人近3日偏多操作 ({recent_3_days_net:,.0f}張)")
-                elif recent_3_days_net > -200: score += 0; details.append(f"[ 0分] 法人近3日無顯著方向 ({recent_3_days_net:,.0f}張)")
+                elif recent_3_days_net > -200: score += 0; details.append(f"[中性] 法人近3日無顯著方向 ({recent_3_days_net:,.0f}張)")
                 else: score -= 20; details.append(f"[-20分] 法人近3日集中倒貨出脫 {abs(recent_3_days_net):,.0f} 張")
-            else: details.append("[ 0分] 近期無法人進出數據")
-        except: details.append("[ 0分] 籌碼面 API 調取受限")
+            else: details.append("[中性] 近期無法人進出數據")
+        except: details.append("[中性] 籌碼面 API 調取受限")
         return max(0, min(score, 100)), details
 
     def _get_advice_level(self, total_score):
@@ -601,13 +619,13 @@ class StockEvaluator:
 
         latest = self.df.iloc[-1]
         is_tw = not self.is_us_stock
-        win_rate, sample_size, avg_return, ev = run_historical_backtest(self.df, self.matched_horizon, self.is_weekly, is_tw)
+        win_rate, sample_size, avg_return, ev = run_historical_backtest(self.df, self.matched_horizon, is_tw)
         
         if win_rate is not None:
             win_rate_str = f"期望值 {ev:.2f}% | 勝率 {win_rate:.1f}%"
-            win_rate_footer = f"系統回測基礎: 過濾近 {len(self.df)} 根K線，擷取 {sample_size} 次高擬合情境計算"
+            win_rate_footer = f"系統回測基礎: 過濾近 {len(self.df)} 根K線，擷取 {sample_size} 次高擬合獨立情境計算"
         else:
-            win_rate_str, win_rate_footer = "樣本顯著性不足", "相似情境過少 (<30)，強制屏蔽失真數據，保障交易品質"
+            win_rate_str, win_rate_footer = "獨立樣本顯著性不足", "相似獨立情境過少 (<15)，強制屏蔽失真數據，保障交易品質"
 
         return {
             "type": "Stock", "name": self.stock_name, "ticker": self.ticker,
@@ -618,16 +636,25 @@ class StockEvaluator:
             "strategy": user_w['desc'],
             "weights": {"fund": user_w['fund']*100, "tech": user_w['tech']*100, "chip": user_w['chip']*100},
             "details_fund": fund_details, "details_tech": tech_details, "details_chip": chip_details,
-            "win_rate": win_rate_str, "win_rate_footer": win_rate_footer, "is_weekly": self.is_weekly
+            "win_rate": win_rate_str, "win_rate_footer": win_rate_footer, "is_weekly": False
         }
 
 # ==========================================
 # 核心大腦路由與主程式
 # ==========================================
+# 加入 st.cache_resource 防止每次 UI 刷新都重新初始化 DataLoader 拖慢速度
+@st.cache_resource
+def get_fm_dataloader():
+    return DataLoader()
+
+@st.cache_data(ttl=86400) # 每日快取一次台股清單即可
+def get_taiwan_stock_info():
+    fm = get_fm_dataloader()
+    return fm.taiwan_stock_info()
+
 class MasterRoutingSystem:
     def __init__(self):
-        self.fm = DataLoader()
-        self._stock_info_cache = None
+        self.fm = get_fm_dataloader()
         
     def auto_detect_type(self, raw_ticker):
         raw_ticker = raw_ticker.strip().upper()
@@ -637,9 +664,8 @@ class MasterRoutingSystem:
         
         if is_tw:
             try:
-                if self._stock_info_cache is None: 
-                    self._stock_info_cache = self.fm.taiwan_stock_info()
-                target = self._stock_info_cache[self._stock_info_cache['stock_id'] == raw_ticker]
+                stock_info_cache = get_taiwan_stock_info()
+                target = stock_info_cache[stock_info_cache['stock_id'] == raw_ticker]
                 if not target.empty:
                     stock_name = target.iloc[0]['stock_name']
                     industry = str(target.iloc[0].get('industry_category', '')).upper()
@@ -660,7 +686,7 @@ class MasterRoutingSystem:
 
 def main():
     st.markdown('<div class="ios-large-title">台美股/ETF 量化決策系統</div>', unsafe_allow_html=True)
-    st.markdown('<div class="ios-sub-title">基於動態期望值 (EV) 與波動率回測架構 (專家增強版)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ios-sub-title">基於動態期望值 (EV) 與獨立樣本回測架構 (Expert Edition)</div>', unsafe_allow_html=True)
 
     col_input1, col_input2 = st.columns([2, 2])
     with col_input1: user_ticker = st.text_input("輸入股票或 ETF 代號", value="2330", placeholder="例如：2330, 0050, AAPL, QQQ")
