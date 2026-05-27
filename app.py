@@ -655,7 +655,7 @@ class StockEvaluator:
         backtest_result = run_path_dependent_backtest(self.df, self.matched_horizon, is_tw, self.user_years)
         
         if backtest_result:
-            win_rate_str = f"EV {backtest_result['ev']:.2f}% | 勝率 {backtest_result['win_rate']:.1f}% | 夏普 {backtest_result['sharpe']:.2f}"
+            win_rate_str = f"期望值 {backtest_result['ev']:.2f}% | 勝率 {backtest_result['win_rate']:.1f}% | 夏普 {backtest_result['sharpe']:.2f}"
             win_rate_footer = f"擷取 {backtest_result['sample_size']} 次歷史獨立特徵 | 平均最大回撤 {backtest_result['avg_mdd']:.1f}% (已扣除滑點成本)"
         else:
             win_rate_str, win_rate_footer = "統計顯著性不足", "為杜絕過擬合(Overfitting)與倖存者偏差，不予呈現無效樣本數"
